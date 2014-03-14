@@ -12,17 +12,23 @@ module.exports = function(config) {
         files: [
             { pattern: 'lib/**/*.js' , included: false },
             { pattern: 'test/**/*.test.js', included: false},
+            { pattern: 'backbone.dualstorage.js' , included: false },
             'test/main.js'
         ],
 
         // list of files to exclude
         exclude: [
-            'public/js/main.js'
+            'public/js/main.js',
+            'test/report.html'
         ],
 
         // test results reporter to use
         // possible values: 'dots', 'progress', 'junit', 'growl', 'coverage'
-        reporters: ['progress'], // need to install spec using
+        reporters: ['progress', 'dots' ,'html'], // need to install spec using
+
+        htmlReporter: {
+            outputFile: 'test/report.html'
+        },
 
         // web server port
         port: 9876,
@@ -69,8 +75,8 @@ module.exports = function(config) {
         'karma-chrome-launcher',
         'karma-firefox-launcher',
         'karma-safari-launcher',
-        'karma-ie-launcher'
+        'karma-ie-launcher',
+        'karma-htmlfile-reporter'
     ]
-
     });
 };
