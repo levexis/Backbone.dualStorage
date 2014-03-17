@@ -59,7 +59,8 @@ define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
                 coll.dualSync = false;
                 returnVal =  { name: 'Adam', date: new Date() };
                 coll.create ( new TestModel ( returnVal ) , { success: function( model , response ) {
-//                        console.log( 'success CB'  , model, response);
+                    coll.toJSON()[0]._id.should.equal(1);
+                    done();
                     }
                 });
                 $.ajax.should.have.been.calledOnce;
@@ -68,8 +69,6 @@ define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
                 // now call callback
                 returnVal._id = 1;
                 $.ajax.getCall(0).args[0].success( returnVal ); // mock API response with returnVal
-                coll.toJSON()[0]._id.should.equal(1);
-                done();
             });
             it('new local collection ', function ( done ) {
                 var returnVal = {};
@@ -77,26 +76,25 @@ define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
                 coll.dualSync = false;
                 returnVal =  { name: 'Adam', date: new Date() };
                 coll.create ( new TestModel ( returnVal ) , { success: function( model , response ) {
-//                    console.log( 'success CB2' , model, response);
+                    $.ajax.should.not.have.been.called;
+                    // local keys will be in backbone format which is a string containing four hyphens
+                    expect (isClientKey( coll.toJSON()[0]._id) ).to.be.ok;                ;
+                    done();
                     }
                 });
-                $.ajax.should.not.have.been.called;
-                // local keys will be in backbone format which is a string containing four hyphens
-                expect (isClientKey( coll.toJSON()[0]._id) ).to.be.ok;                ;
-                done();
             });
             it('new dual collection ', function ( done ) {
                 var coll = new TestCollection();
                 returnVal =  { name: 'Adam', date: new Date() };
-                coll.create ( new TestModel ( returnVal ) ); // no need to specify success cb
+                coll.create ( new TestModel ( returnVal ) , { success: function( model , response ) {
+                    coll.toJSON()[0]._id.should.equal(3);
+                    done();
+                } });
                 returnVal._id = 3;
                 $.ajax.getCall(0).args[0].success( returnVal );
-                coll.toJSON()[0]._id.should.equal(3);
-                done();
             });
             it('should reject invalid models on create');
         });
-        // as this is done
         describe('local only collections', function() {
             var coll;
             beforeEach ( function() {
@@ -109,34 +107,30 @@ define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
             afterEach ( function() {
                 $.ajax.restore();
             });
-            it('should never fetch remote', function() {
-                var success = false;
+            it('should never fetch remote', function( done ) {
                 coll.fetch( { success: function() {
-                    success = true;
+                    coll.length.should.equal( 0 );
+                    $.ajax.should.not.have.been.called;
+                    done();
                 } });
-                success.should.be.ok;
-                coll.length.should.equal( 0 );
-                $.ajax.should.not.have.been.called;
             });
-            it('should ignore online', function() {
+            it('should ignore online', function( done ) {
                 coll.online = true;
                 var success = false;
                 coll.fetch( { success: function() {
-                    success = true;
+                    coll.length.should.equal( 0 );
+                    $.ajax.should.not.have.been.called;
+                    done();
                 } });
-                success.should.be.ok;
-                coll.length.should.equal( 0 );
-                $.ajax.should.not.have.been.called;
             });
-            it('should ignore returnFirst', function() {
+            it('should ignore returnFirst', function( done ) {
                 coll.returnFirst = 'remote';
                 var success = false;
                 coll.fetch( { success: function() {
-                    success = true;
+                    coll.length.should.equal( 0 );
+                    $.ajax.should.not.have.been.called;
+                    done();
                 } });
-                success.should.be.ok;
-                coll.length.should.equal( 0 );
-                $.ajax.should.not.have.been.called;
             });
             it('should reject invalid models on create');
         });
@@ -152,7 +146,8 @@ define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
             afterEach ( function() {
                 $.ajax.restore();
             });
-            it('should never fetch remote', function() {
+            it('should always fetch remote', function() {
+                coll.return = 'local';
                 var success = false;
                 coll.fetch( { success: function() {
                     success = true;
@@ -169,7 +164,7 @@ define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
                 } });
                 success.should.not.be.ok;
                 coll.length.should.equal( 0 );
-                $.ajax.should.have.been.called;
+                $.ajax.should.have.been.calledOnce;
             });
             it('should ignore returnFirst', function() {
                 coll.returnFirst = 'remote';
@@ -179,7 +174,7 @@ define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
                 } });
                 success.should.not.be.ok;
                 coll.length.should.equal( 0 );
-                $.ajax.should.have.been.called;
+                $.ajax.should.have.been.calledOnce;
             });
             it('should reject invalid models on create');
         });
