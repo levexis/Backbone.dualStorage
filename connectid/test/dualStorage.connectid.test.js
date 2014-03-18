@@ -51,16 +51,24 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
          */
         function _createDoc ( doc , callBack ) {
             // success CB is called when local only so make sure we don't CB twice
-            var isLocal = false;
+            var isLocal = false,
+                created;
             // clearout the call stack so getCall 0 is last all
             $.ajax.reset();
-            coll.create ( doc , { success: function () {
-                isLocal = true; // rename cbCalled perhaps
-                if ( typeof callBack === 'function' ) callBack ( remoteCollection );
-            } } );
-            // actually useful to add the ids as we go to the object so we can easily fetch
+            created = coll.create ( doc , { success: function () {
+                    isLocal = true; // rename cbCalled perhaps
+                    if ( typeof callBack === 'function' ) callBack ( doc );
+                },
+                error: function() {
+                    isLocal = true; // rename cbCalled perhaps
+                    console.log( 'error creating' , doc );
+                    if ( typeof callBack === 'function' ) callBack ();
+                }
+            });
+            // add the _id to the original object as we can then compare deeply to fetched
             doc._id = _id++;
-            if ( !isLocal) $.ajax.getCall(0).args[0].success( doc );
+            if ( !isLocal && !created.validationError && $.ajax.called) $.ajax.getCall(0).args[0].success( doc );
+            return created;
             // give it a "proper" id, ie no hyphens like you get from mongo
 //            if ( !isLocal) $.ajax.getCall(0).args[0].success( _.extend ( doc , {_id : _id++ } ) );
         }
@@ -129,11 +137,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     coll.return = 'local';
                     _fetch( remoteColl );
                     coll.length.should.equal(3);
-                    /* dodgy as the first call should trigger a lazy refresh so the second call should = 6
-                    delete coll.return;
-                    _fetch( remoteColl );
-                    coll.length.should.equal(3);
-                    */
                 });
                 it('should fetch & return remote version if return = remote' , function ( done ) {
                     coll.return = 'remote';
@@ -159,7 +162,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     _fetch( remoteColl );
                     $.ajax.should.not.have.been.called;
                     coll.length.should.equal(4);
-                    expect ( isDirty ( coll.toJSON.pop() ) ).to.be.true;
+                    expect ( isDirty ( coll.toJSON().pop() ) ).to.be.true;
                 });
                 it('should support isOnline as a function' , function () {
                     coll.isOnline = function () { return false };
@@ -169,7 +172,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
             });
         });
         describe('Empty locally synced collections', function() {
-            var coll;
             beforeEach ( function() {
                 window.localStorage.clear();
                 coll = new TestCollection();
@@ -189,7 +191,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                         done();
                     });
                 });
-                it('should not make a localStorage copy if dualSync not enabled for collection (default Backbone Behaviour)', function () {
+                it('should not make a localStorage copy if dualSync not enabled for collection (default Backbone Behaviour)', function ( done ) {
                     coll.dualSync = false;
                     coll.local = false;
                     _fetch( remoteColl , function () {
@@ -201,7 +203,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
             });
             describe('when offline' , function() {
                 beforeEach ( function() {
-                    coll.isOnine = false;
+                    coll.isOnline = false;
                 });
                 it('should still not make a localStorage copy if dualSync not enabled for collection (default Backbone Behaviour)', function () {
                     coll.dualSync = false;
@@ -211,10 +213,9 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     $.ajax.should.have.been.called;
                 });
                 it('should create and return a new blank local collection regardless of return', function() {
-                    coll.return = 'local';
+                    coll.return = 'remote';
                     _fetch( remoteColl );
-                    coll.length.should.be( 0 );
-                    window.localStorage.length.should.not.equal( 0 );
+                    coll.length.should.equal( 0 );
                 });
                 it('should not attempt to make remote calls if local or dualSync option set' , function () {
                     _fetch( remoteColl );
@@ -222,17 +223,24 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 });
                 it('should attempt to make remote calls if dualSync not enabled for collection (default Backbone)' , function () {
                     coll.dualSync = false;
+                    coll.local = false;
                     _fetch( remoteColl );
                     $.ajax.should.have.been.called;
                 });
+                it('should create locally' , function () {
+                    _createDoc( gList[0] );
+                    coll.length.should.equal( 1 );
+                    window.localStorage.length.should.not.equal( 0 );
+                });
                 it('should validate on local create and reject if validation fails' , function () {
-                    _createDoc({ name: 'Jon' });
-                    coll.length.should.be( 0 );
+                    _createDoc({ name: 'Jon' }).validationError.should.be.true;
+                    window.localStorage.length.should.equal( 0 );
+                    _fetch();
+                    coll.length.should.equal( 0 );
                 });
             });
         });
         describe('Dirty locally synced collections', function() {
-            var coll;
             beforeEach ( function() {
                 window.localStorage.clear();
                 coll = new TestCollection();
@@ -254,10 +262,11 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 });
                 it('should sync dirty records before next create online' , function ( done ) {
                     _createDoc( gList[0] , function () {
-                        $.ajax.should.have.callCount ( 4 );
+                        $.ajax.callCount.should.equal ( 4 );
                         coll.length.should.equal ( 7 );
                         done();
                     });
+                    // put client key in callback? how do we test?
                     $.ajax.getCall(1).args[0].success();
                     $.ajax.getCall(2).args[0].success();
                     $.ajax.getCall(3).args[0].success();

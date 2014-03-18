@@ -21,7 +21,9 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
     }
 
     // contains client key to remote key values
-    var _keys = {};
+    var _keys = {},
+        _isSyncing = false; // this is a global
+
 // TODO: NEEDS TO BE SMART ABOUT POSTS FIRST AND ADD PUTS BACK TO QUEUE AND THEN DELETES
 // ASYNC=FALSE IS NOT RELIABLE AND KEY MAPPINGS ARE NOT THERE WHEN REQUESTS
 // ARE QUEUED.   
@@ -33,30 +35,35 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
         ids = (store && store.split( ',' )) || [];
         _results = [];
         for ( _i = 0, _len = ids.length; _i < _len; _i++ ) {
+            _isSyncing = true;
             id = ids[_i];
-            console.log( 'syncing for update', id, this );
+            console.log( 'syncing dirty', _i, _len, id, this );
             model = this.get( id );
-            if ( !model ) throw new Error( 'dirty model id [' + id + ']' );
+            if ( !model ) {
+                throw new Error( 'dirty model id [' + id + ']' );
+            }
             // if the model is new (has a backbone id) then remove the id so creates new record
             // the local cache is cleared when the data is refreshed from server
-            console.log( 'syncing for update', id, model, this.model.prototype.idAttribute, model.get( this.model.prototype.idAttribute ), isClientKey( model.get( this.model.prototype.idAttribute ) ), this );
+            console.log( 'syncing for update', model, this.model.prototype.idAttribute, model.get( this.model.prototype.idAttribute ), isClientKey( model.get( this.model.prototype.idAttribute ) ), this );
             if ( isClientKey( id ) ) {
                 // have we already got a key
-                if ( _keys[id] === 'undefined' ) {
+                if ( typeof _keys[id] === 'undefined' ) {
                     // remove temporary id on new record creation
                     if ( this.model.prototype.idAttribute ) model.unset( this.model.prototype.idAttribute );
                     // and remove the id so posts new
                     delete model.id;
-                    console.log( 'new model', model );
+//                    console.log( 'new model', model );
                     model.clientId = id;
-                    // this creates a stub which may get referenced by later requests if fired synchronous
-                    // have called it stub so can trace if it is passed by reference
-                    _keys[id] = 'stub';
+                    // this creates a stub which may get referenced by later requests if fired sequentially, eg create then update or as a foreign key
+                    _keys[id] = 'stub' + _i;
                 } else {
                     if ( this.model.prototype.idAttribute ) model.set( this.model.prototype.idAttribute, _keys[id] );
                     // and remove the id so posts new
                     model.id = _keys[id];
                 }
+            } else {
+                // why would we get here
+                console.log ( 'not a client key' , id )
             }
             model.url = url;
 
@@ -66,25 +73,34 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
             $.ajaxSetup( {
                 async : model.id ? true : false
             } );
-            // now could put personas in here
+            // model.save
             _results.push( model.save( {
-                    dualsync : true,
+                    dualSync : true,
                     remote : true
                 },
                 { success : function ( model, response ) {
-                    // this is not perfect but it keeps things simple, as may still be callbacks - could use underscore method to count call backs
+                    var newKey;
+                    // this is not perfect, we try to pluck the id from the server response so assumes route returns model or collection
+                    // but it keeps things simple, as may still be callbacks - could use underscore method to count call backs
                     // idea is to show dirty data until fetch starts after all updates have been sent
                     // otherwise you get a blank list
                     // is the scope ok with these on multiple updates
                     localStorage.removeItem( '' + model.url + '_dirty' );
 //                    console.log( 'done ' + model.url + '_dirty' );
-                    if ( model.clientId ) {
-                        console.log( 'mapping', model.clientId, 'to', response[ (that.model.prototype.idAttribute || 'id') ] );
-                        _keys[ model.clientId ] = response[ (that.model.prototype.idAttribute || 'id') ];
+                    // if the model has clientId that's the id backbone was using
+                    // we can now swap this out from its stub value to the one id created remotely
+                    if ( model.clientId && typeof response === 'object' ) {
+                        newKey = response[ ( model.idAttribute || 'id') ];
+                    }
+                    if ( newKey ) {
+                        console.log( 'mapping', model.clientId, 'to', newKey );
+                        _keys[ model.clientId ] = response[ ( model.idAttribute || 'id') ];
                         delete model.clientId;
                         // re-enable async if disabled
                         $.ajaxSetup( { async : true } );
+                        _isSyncing = false;
                     }
+                    // todo: why delete the url?
                     delete model.url;
                 },
                     error : function ( model, xhr, options ) {
@@ -96,12 +112,11 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                         }
                         // re-enable async if disabled
                         $.ajaxSetup( { async : true } );
+                        _isSyncing = false;
                     }
-
                 } )
             );
         }
-//    localStorage.removeItem('' + url + '_dirty'); // this has been moved so we show dirty data until updates have been done
         return _results;
     };
     Backbone.Collection.prototype.syncDestroyed = function () {
@@ -477,12 +492,10 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
 
         if ( typeof options.isOnline === 'function' ) options.isOnline = options.isOnline();
 
-//        console.log('dualSync', method, options );
+        console.log('dualSync', method, options );
 
         // single sync, simple mode
         if ( !options.isOnline || !options.dualSync ) {
-
-//      console.log( 'single sync' , options.remote , options.dualSync , model.dualSync , model );
             // if there is no local copy then always tries remote, regardless off isOnline - this is default BackBone behaviour
             if ( options.isOnline &&
                 ( result( model, 'remote' ) || result( collection , 'remote' ) ) ) {
@@ -506,7 +519,8 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
             // check if we have dirty records to deal with
             dirty = localsync( 'hasDirtyOrDestroyed', model, options );
             // todo: check not already syncing from previous request?
-            if (dirty) hooks = collection.syncDirtyAndDestroyed();
+            // should maybe be a global?
+            if ( !_isSyncing && dirty) hooks = collection.syncDirtyAndDestroyed();
             switch ( method ) {
                 // if got unsynced local changes will return local copy only
                 case 'read':
