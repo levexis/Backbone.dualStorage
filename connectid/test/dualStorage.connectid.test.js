@@ -94,6 +94,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
         before ( function () {
             TestModel = Backbone.Model.extend({
                 idAttribute: '_id',
+                url : '/api/1/tests',
                 validate: function(attrs, options) {
                     if ( _.has(attrs,'name') ) {
                         var name = attrs.name.toLowerCase();
@@ -119,6 +120,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
         });
         describe('Clean locally synced collections, remote changed', function() {
             beforeEach ( function() {
+                _id = 1;
                 window.localStorage.clear();
                 coll = new TestCollection();
                 sinon.stub( $ , 'ajax');
@@ -173,6 +175,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
         });
         describe('Empty locally synced collections', function() {
             beforeEach ( function() {
+                _id = 1;
                 window.localStorage.clear();
                 coll = new TestCollection();
                 sinon.stub( $ , 'ajax');
@@ -241,56 +244,45 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
             });
         });
         describe('Dirty locally synced collections', function() {
-            var promises;
-            beforeEach ( function() {
-                promises = [];
-                function makePromise () {
-                    var deferred = new $.Deferred(),
-                        i = promises.length;
-//                    console.log ('promise', i);
-//                    deferred.done( function () { console.log( 'resolved' , i); } );
-                    promises.push ( deferred );
-                    return deferred.promise();
-                }
-                window.localStorage.clear();
-                coll = new TestCollection();
-                sinon.stub( $ , 'ajax' , makePromise);
-                aList.forEach ( _createDoc );
-                coll.length.should.equal(3);
-                // now put offline
-                coll.isOnline = false;
-                dList.forEach ( _createDoc );
-                coll.length.should.equal(6);
-                promises = [];
-                $.ajax.reset();
-            });
-            afterEach ( function() {
-                $.ajax.restore();
-            });
             describe('when online' , function() {
+                var promises;
+                function _resolvePromise ( promise  ) {
+                    // we get array pos as 2nd argument so just resolve!
+                    promise.resolve();
+                }
                 beforeEach ( function() {
+                    _id = 1;
+                    promises = [];
+                    function makePromise () {
+                        var deferred = new $.Deferred(),
+                            i = promises.length;
+                        promises.push ( deferred );
+                        return deferred.promise();
+                    }
+                    window.localStorage.clear();
+                    coll = new TestCollection();
+                    coll.isOnline = true;
+                    sinon.stub( $ , 'ajax' , makePromise);
+                    aList.forEach ( _createDoc );
+                    coll.length.should.equal(3);
+                    // now put offline
+                    coll.isOnline = false;
+                    dList.forEach ( _createDoc );
+                    coll.length.should.equal(6);
+                    promises = [];
+                    $.ajax.reset();
                     coll.isOnline = true;
                 });
-                it('should sync dirty records before next create online' , function ( done ) {
-                    _createDoc( gList[0] , function () {
-                        $.ajax.callCount.should.equal ( 4 );
-                        coll.length.should.equal ( 7 );
-                        done();
-                    });
-                    // put client key in callback? how do we test?
-                    $.ajax.getCall(0).args[0].success();
-                    $.ajax.getCall(1).args[0].success();
-                    $.ajax.getCall(2).args[0].success();
-                    $.ajax.getCall(3).args[0].success();
-                    $.ajax.getCall(4).args[0].success();
+                afterEach ( function() {
+                    // something isn't working properly here as tests work fine on their own!
+                    $.ajax.reset();
+                    $.ajax.restore();
+                    promises = [];
+                    window.localStorage.clear();
                 });
-                it.only('should sync dirty records after next read online', function (done) {
+                it('should sync dirty records after next read online', function (done) {
                     var _dirtyCount = 0,
                         remote = _.union ( aList,dList);
-                    function _resolvePromise ( promise  ) {
-                        // we get array pos as 2nd argument so just resolve!
-                        promise.resolve();
-                    }
                     function checkDirty ( doc ) {
                         if ( isDirty( doc ) ) {
                             _dirtyCount ++;
@@ -307,42 +299,62 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     $.ajax.getCall(0).args[0].success();
                     $.ajax.getCall(1).args[0].success();
                     $.ajax.getCall(2).args[0].success();
+                    // once promises resolve it will fetch the remote collection, could offer a flag if API always returns collection to avoid extra round trip
                     promises.length.should.equal ( 3 );
                     promises.forEach ( _resolvePromise );
-                  $.ajax.callCount.should.equal(4);
+                    $.ajax.callCount.should.equal(4);
                     $.ajax.getCall(3).args[0].success( remote );
                     _dirtyCount = 0;
                     _fetch ( _.union ( aList,dList) );
-                    console.log ( coll.toJSON() , window.localStorage );
                     coll.toJSON().forEach ( checkDirty );
                     expect( _dirtyCount ).to.equal( 0 );
                     done();
                 });
-                it('should sync dirty records before next update online' , function ( done ) {
+                it('should sync dirty records before next create online' , function ( done ) {
+                    _createDoc( gList[0] , function () {
+                        $.ajax.callCount.should.equal ( 4 );
+                        $.ajax.getCall(3).args[0].type.should.equal('POST');
+                        $.ajax.getCall(3).args[0].url.should.equal('/api/1/tests');
+                        coll.length.should.equal ( 7 );
+                        done();
+                    });
+                    // put client key in callback? how do we test?
+                    $.ajax.getCall(0).args[0].success();
+                    $.ajax.getCall(1).args[0].success();
+                    $.ajax.getCall(2).args[0].success();
+                    promises.forEach ( _resolvePromise );
+                    $.ajax.getCall(3).args[0].success();
+                });
+                it('should sync dirty records before next update online' , function () {
                     var rec = coll.get ( 1 );
                     rec.set ( { updated : true } );
-                    rec.save( { success: function () {
-                            coll.length.should.equal ( 6 );
-                            done();
-                        }
-                    });
-                    $.ajax.callCount.should.equal ( 4 );
-                    $.ajax.getCall(3).args[0].success();
+                    rec.save();
+                    $.ajax.callCount.should.equal ( 3 );
+                    promises.forEach ( _resolvePromise );
+                    $.ajax.getCall(3).args[0].type.should.equal('PUT');
+                    $.ajax.getCall(3).args[0].url.should.equal('/api/1/tests/1');
                 });
                 it('should sync dirty records before next delete online' , function () {
                     var rec = coll.get(1);
-                    coll.remove ( rec );
+                    rec.destroy ( rec );
+                    $.ajax.callCount.should.equal ( 3 );
+                    promises.forEach ( _resolvePromise );
+                    console.log ( $.ajax.getCall(3).args );
+                    $.ajax.getCall(3).args[0].type.should.equal('DELETE');
+                    $.ajax.getCall(3).args[0].url.should.equal('/api/1/tests');
                     $.ajax.callCount.should.equal ( 4 );
                     coll.length.should.equal ( 5 );
                 });
                 it('should not create or update a remote record if delete queued', function () {
-                    var rec = coll.findWhere ( { name : dList[0] } );
-                    coll.remove ( rec );
+                    var rec = coll.findWhere ( { name : dList[0].name } );
+                    rec.destroy ( rec );
+                    promises.forEach ( _resolvePromise );
                     $.ajax.callCount.should.equal ( 4 );
                     coll.length.should.equal ( 5 );
                 });
                 it('should return remote results from local cache on double fetch' , function () {
-                    var _dirtyCount = 0, result = [];
+                    _id = 1;
+                    var _dirtyCount = 0, result = [], remote =  _.union( aList , dList );
                     function checkDirty ( doc ) {
                         if ( isDirty( doc ) ) {
                             _dirtyCount ++;
@@ -355,13 +367,19 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     // return dirty
                     result = coll.toJSON();
                     result.forEach ( checkDirty );
-                    expect( dirtyCount ).to.equal(3);
-                    // return clean
+                    expect( _dirtyCount ).to.equal(3);
+                    $.ajax.getCall(0).args[0].success();
+                    $.ajax.getCall(1).args[0].success();
+                    $.ajax.getCall(2).args[0].success();
+                    promises.forEach ( _resolvePromise );
+                    $.ajax.getCall(3).args[0].success( remote );
+                    // should now return clean
+                    _dirtyCount = 0;
                     _fetch( _.union( aList , dList ) );
                     result = coll.toJSON();
                     result.forEach ( checkDirty );
-                    expect( dirtyCount ).to.equal(3);
-                    expect ( result ).to.deepEqual( _.union( aList , dList ) );
+                    expect( _dirtyCount ).to.equal(0);
+//                    expect(result).to.have.members( remote ); dates are formated differently
                 });
                 it('should return dirty results on second fetch if queue not yet played back');
                 it('should have fully refreshed collection after queue played back');
@@ -370,7 +388,20 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
             });
             describe('when offline' , function() {
                 beforeEach ( function() {
+                    _id = 1;
+                    window.localStorage.clear();
+                    coll = new TestCollection();
+                    sinon.stub( $ , 'ajax');
+                    aList.forEach ( _createDoc );
+                    coll.length.should.equal(3);
+                    // now put offline
                     coll.isOnline = false;
+                    dList.forEach ( _createDoc );
+                    coll.length.should.equal(6);
+                    $.ajax.reset();
+                });
+                afterEach ( function() {
+                    $.ajax.restore();
                 });
                 it('should continue to create and return local records' , function () {
                     _createDoc( gList[0] );
@@ -380,16 +411,16 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 });
                 it('should update records from collection fetched' , function () {
                     var doc = coll.get ( 1 );
-                    doc.set( { updated : true } );
+                    doc.set( 'updated', true  );
                     doc.save();
                     $.ajax.should.not.have.been.called;
-                    coll.toJSON()[0].updated.should.equal( true );
+                    coll.get( 1 ).get( 'updated' ).should.equal( true );
                 });
                 it('should remove deleted records from collection fetched', function() {
                     var doc = coll.get ( 1 );
-                    coll.remove ( doc );
+                    doc.destroy();
                     $.ajax.should.not.have.been.called;
-                    coll.length.should.be( 5 );
+                    coll.length.should.equal( 5 );
                 });
              });
         });

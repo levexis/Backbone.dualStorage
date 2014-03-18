@@ -7,7 +7,6 @@
  as that.
 
  */
-window.WATCH='';
 if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
 
 (function () {
@@ -523,7 +522,7 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
             // check if we have dirty records to deal with
             dirty = localsync( 'hasDirtyOrDestroyed', model, options );
             // todo: check not already syncing from previous request?
-            // should maybe be a global?
+            // isSyncing indicates sync in progress, if so don't add to the queue, this is probably a recursive create
             if ( !_isSyncing && dirty) {
                 console.log ('calling syncDirt...');
                 hooks = collection.syncDirtyAndDestroyed();
@@ -565,7 +564,7 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                     if ( returned) {
                         // fetch the remote data and populate cache in background
                         _success = function ( resp , status, xhr ) { console.log ('lazy callback', resp , status, xhr); };
-                        WATCH = _doXHRs (  hooks, function () {  return onlineSync( method, model , options ); } );
+                        _doXHRs (  hooks, function () {  return onlineSync( method, model , options ); } );
                         return success (returned);
                     } else {
                         // call success on xhr.success
@@ -596,9 +595,12 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                             return error( method, model, options );
                         }
                     };
-                    return onlineSync( method, model, options );
+                    return _doXHRs (  hooks,
+                        function () {  return onlineSync( method, model , options ); },
+                        function (resp) {  return options.error(resp);; }
+                    );
                 case 'update':
-                    if ( _.isString( model.id ) && model.id.length === 36 ) {
+                    if ( isClientKey ( model.id ) ) {
                         originalModel = model.clone();
                         options.success = function ( resp, status, xhr ) {
                             var updatedModel;
@@ -614,7 +616,10 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                         model.set( {
                             id : null
                         } );
-                        return onlineSync( 'create', model, options );
+                        return _doXHRs (  hooks,
+                            function () {  return onlineSync( 'create', model , options ); },
+                            function (resp) {  return options.error(resp); }
+                        );
                     } else {
                         options.success = function ( resp, status, xhr ) {
                             var updatedModel;
@@ -626,11 +631,14 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                             options.dirty = true;
                             return success( localsync( method, model, options ) );
                         };
-                        return onlineSync( method, model, options );
+                        return _doXHRs (  hooks,
+                            function () {  return onlineSync( method, model , options ); },
+                            function (resp) {  return options.error(resp);; }
+                        );
                     }
                     break;
                 case 'delete':
-                    if ( _.isString( model.id ) && model.id.length === 36 ) {
+                    if ( isClientKey ( model.id ) ) {
                         return localsync( method, model, options );
                     } else {
                         options.success = function ( resp, status, xhr ) {
@@ -641,7 +649,10 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                             options.dirty = true;
                             return success( localsync( method, model, options ) );
                         };
-                        return onlineSync( method, model, options );
+                        return _doXHRs (  hooks,
+                            function () {  return onlineSync( method, model , options ); },
+                            function (resp) {  return options.error(resp); }
+                        );
                     }
             }
         }
