@@ -7,6 +7,7 @@
  as that.
 
  */
+window.WATCH='';
 if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
 
 (function () {
@@ -44,12 +45,12 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
             }
             // if the model is new (has a backbone id) then remove the id so creates new record
             // the local cache is cleared when the data is refreshed from server
-            console.log( 'syncing for update', model, this.model.prototype.idAttribute, model.get( this.model.prototype.idAttribute ), isClientKey( model.get( this.model.prototype.idAttribute ) ), this );
+            console.log( 'syncing for update', model, model.idAttribute, model.get( model.idAttribute ), isClientKey( model.get( model.idAttribute ) ), this );
             if ( isClientKey( id ) ) {
                 // have we already got a key
                 if ( typeof _keys[id] === 'undefined' ) {
                     // remove temporary id on new record creation
-                    if ( this.model.prototype.idAttribute ) model.unset( this.model.prototype.idAttribute );
+                    if ( model.idAttribute ) model.unset( model.idAttribute );
                     // and remove the id so posts new
                     delete model.id;
 //                    console.log( 'new model', model );
@@ -457,8 +458,11 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
         // todo: factor this out?
         if ( options.dirtyLoad ) return localsync( method, model, options );
 
-        function _doXHR ( successFn, errorFn ) {
-            if ( !dirty ) {
+        /*
+            this does a load of XHRs and calls a callback when complete, returns the promise.
+         */
+        function _doXHRs ( hooks, successFn, errorFn ) {
+            if ( !hooks || !hooks.length ) {
                 return onlineSync( method, model, options );
             } else {
                 // sync after dirty business taken care of
@@ -520,7 +524,10 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
             dirty = localsync( 'hasDirtyOrDestroyed', model, options );
             // todo: check not already syncing from previous request?
             // should maybe be a global?
-            if ( !_isSyncing && dirty) hooks = collection.syncDirtyAndDestroyed();
+            if ( !_isSyncing && dirty) {
+                console.log ('calling syncDirt...');
+                hooks = collection.syncDirtyAndDestroyed();
+            }
             switch ( method ) {
                 // if got unsynced local changes will return local copy only
                 case 'read':
@@ -532,21 +539,21 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                         //          console.log ('not dirty',model);
                         var collection, modelAttributes, responseModel, _i, _len;
                         resp = parseRemoteResponse( model, resp );
-                        if ( !options.add ) {
-                            // refreshes local copy unless you set the add option
+                        // refreshes local copy unless you set the add option, PC - now disabled as seems to be set on callback by Backbone after syncing
+                        if ( resp /* && !options.add */ ) {
                             localsync( 'clear', model, options );
-                        }
-                        // assumes response is a collection if returned an array
-                        if ( _.isArray( resp ) ) {
-                            collection = model;
-                            for ( _i = 0, _len = resp.length; _i < _len; _i++ ) {
-                                modelAttributes = resp[_i];
-                                responseModel = modelUpdatedWithResponse( new collection.model, modelAttributes );
+                            // assumes response is a collection if returned an array
+                            if ( resp instanceof Array ) {
+                                collection = model;
+                                for ( _i = 0, _len = resp.length; _i < _len; _i++ ) {
+                                    modelAttributes = resp[_i];
+                                    responseModel = modelUpdatedWithResponse( new collection.model, modelAttributes );
+                                    localsync( 'create', responseModel, options );
+                                }
+                            } else {
+                                responseModel = modelUpdatedWithResponse( new model.constructor, resp );
                                 localsync( 'create', responseModel, options );
                             }
-                        } else {
-                            responseModel = modelUpdatedWithResponse( new model.constructor, resp );
-                            localsync( 'create', responseModel, options );
                         }
                         return _success( resp, status, xhr );
                     };
@@ -557,13 +564,14 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                     // return local or remote
                     if ( returned) {
                         // fetch the remote data and populate cache in background
-                        _success = function () { console.log ('lazy callback'); };
-                        _doXHR (  function () {  return onlineSync( method, model , options ); } );
+                        _success = function ( resp , status, xhr ) { console.log ('lazy callback', resp , status, xhr); };
+                        WATCH = _doXHRs (  hooks, function () {  return onlineSync( method, model , options ); } );
                         return success (returned);
                     } else {
                         // call success on xhr.success
                         _success = success;
-                        return _doXHR (  function () {  return onlineSync( method, model , options ); },
+                        return _doXHRs (  hooks,
+                            function () {  return onlineSync( method, model , options ); },
                             function () {  return success( localsync( method, model, options ) ); }
                         );
                     }

@@ -8,7 +8,7 @@
 // return =  default is remote if remote and online and no dirty data otherwise local
 // isOnline = defaults to navigator.onLine but who the fuck capitalizes the L in online! Doesn't try to make requests, does same as if error 0
 
-define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ , _ ) {
+define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ , _  ) {
     // identifies a dualStorage generated key rather than a mongodb generated one
     function isClientKey ( id ) {
         return (!!id && id.length === 36 && id.match(/-/g).length === 4);
@@ -241,16 +241,27 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
             });
         });
         describe('Dirty locally synced collections', function() {
+            var promises;
             beforeEach ( function() {
+                promises = [];
+                function makePromise () {
+                    var deferred = new $.Deferred(),
+                        i = promises.length;
+//                    console.log ('promise', i);
+//                    deferred.done( function () { console.log( 'resolved' , i); } );
+                    promises.push ( deferred );
+                    return deferred.promise();
+                }
                 window.localStorage.clear();
                 coll = new TestCollection();
-                sinon.stub( $ , 'ajax');
+                sinon.stub( $ , 'ajax' , makePromise);
                 aList.forEach ( _createDoc );
                 coll.length.should.equal(3);
                 // now put offline
                 coll.isOnline = false;
                 dList.forEach ( _createDoc );
                 coll.length.should.equal(6);
+                promises = [];
                 $.ajax.reset();
             });
             afterEach ( function() {
@@ -267,34 +278,67 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                         done();
                     });
                     // put client key in callback? how do we test?
+                    $.ajax.getCall(0).args[0].success();
                     $.ajax.getCall(1).args[0].success();
                     $.ajax.getCall(2).args[0].success();
                     $.ajax.getCall(3).args[0].success();
                     $.ajax.getCall(4).args[0].success();
                 });
-                it('should sync dirty records after next read online');
-                it('should sync dirty records before next update online' , function () {
+                it.only('should sync dirty records after next read online', function (done) {
+                    var _dirtyCount = 0,
+                        remote = _.union ( aList,dList);
+                    function _resolvePromise ( promise  ) {
+                        // we get array pos as 2nd argument so just resolve!
+                        promise.resolve();
+                    }
+                    function checkDirty ( doc ) {
+                        if ( isDirty( doc ) ) {
+                            _dirtyCount ++;
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    }
+                    _fetch ( _.union ( aList,dList) );
+                    coll.length.should.equal(6);
+                    coll.toJSON().forEach ( checkDirty );
+                    expect( _dirtyCount ).to.equal(3);
+                    $.ajax.callCount.should.equal(3);
+                    $.ajax.getCall(0).args[0].success();
+                    $.ajax.getCall(1).args[0].success();
+                    $.ajax.getCall(2).args[0].success();
+                    promises.length.should.equal ( 3 );
+                    promises.forEach ( _resolvePromise );
+                  $.ajax.callCount.should.equal(4);
+                    $.ajax.getCall(3).args[0].success( remote );
+                    _dirtyCount = 0;
+                    _fetch ( _.union ( aList,dList) );
+                    console.log ( coll.toJSON() , window.localStorage );
+                    coll.toJSON().forEach ( checkDirty );
+                    expect( _dirtyCount ).to.equal( 0 );
+                    done();
+                });
+                it('should sync dirty records before next update online' , function ( done ) {
                     var rec = coll.get ( 1 );
                     rec.set ( { updated : true } );
                     rec.save( { success: function () {
-                            // may need to call success on last?
-                            // $.ajax.getCall(3).args[0].success( );
                             coll.length.should.equal ( 6 );
                             done();
                         }
                     });
-                    $.ajax.should.have.callCount ( 4 );
+                    $.ajax.callCount.should.equal ( 4 );
+                    $.ajax.getCall(3).args[0].success();
                 });
                 it('should sync dirty records before next delete online' , function () {
                     var rec = coll.get(1);
                     coll.remove ( rec );
-                    $.ajax.should.have.callCount ( 4 );
+                    $.ajax.callCount.should.equal ( 4 );
                     coll.length.should.equal ( 5 );
                 });
                 it('should not create or update a remote record if delete queued', function () {
                     var rec = coll.findWhere ( { name : dList[0] } );
                     coll.remove ( rec );
-                    $.ajax.should.have.callCount ( 2 );
+                    $.ajax.callCount.should.equal ( 4 );
                     coll.length.should.equal ( 5 );
                 });
                 it('should return remote results from local cache on double fetch' , function () {
@@ -307,17 +351,17 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                             return false;
                         }
                     }
-                    _fetch( _.extend( aList , dList ) );
+                    _fetch( _.union( aList , dList ) );
                     // return dirty
                     result = coll.toJSON();
                     result.forEach ( checkDirty );
                     expect( dirtyCount ).to.equal(3);
                     // return clean
-                    _fetch( _.extend( aList , dList ) );
+                    _fetch( _.union( aList , dList ) );
                     result = coll.toJSON();
                     result.forEach ( checkDirty );
                     expect( dirtyCount ).to.equal(3);
-                    expect ( result ).to.deepEqual( _.extend(aList,dList) );
+                    expect ( result ).to.deepEqual( _.union( aList , dList ) );
                 });
                 it('should return dirty results on second fetch if queue not yet played back');
                 it('should have fully refreshed collection after queue played back');
