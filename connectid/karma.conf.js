@@ -41,10 +41,10 @@ module.exports = function(config) {
 
         // level of logging
         // possible values: config.LOG_DISABLE || config.LOG_ERROR || config.LOG_WARN || config.LOG_INFO || config.LOG_DEBUG
-        logLevel: config.LOG_DEBUG,
+        logLevel: config.LOG_ERROR,
 
         // enable / disable watching file and executing tests whenever any file changes
-        autoWatch: true,
+        autoWatch:false,
 
         // Start these browsers, currently available:
         // - Chrome
@@ -54,7 +54,7 @@ module.exports = function(config) {
         // - Safari (only Mac)
         // - PhantomJS
         // - IE (only Windows)
-        browsers: ['Safari'  ],
+        browsers: ['Chrome'  ],
 
         // If browser does not capture in given timeout [ms], kill it
         captureTimeout: 60000,

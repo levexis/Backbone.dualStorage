@@ -431,9 +431,12 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
     };
 
 
-    // model is also known as collection
+    // model contains the model being CUD so collection is in model.collection
+    // if reading then called in collection context so colection model then conatins models
+    // our config is stored in the collection prototype
     dualsync = function ( method, model, options ) {
-        var error, local, originalModel, success , returned , dirty , hooks;
+        var error, local, originalModel, success , returned , dirty , hooks, _success
+           collection = model.collection || this;
         options = options || {};
         // dirtyLoad route is used internaly to fetch dirty records for sync before fetch
         // todo: factor this out?
@@ -449,37 +452,46 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
             }
         }
 
-        options.storeName = result( model.collection, 'url' ) || result( model, 'url' );
+        options.storeName = result( collection, 'url' ) || result( model, 'url' );
         options.success = callbackTranslator.forDualstorageCaller( options.success, model, options );
         options.error = callbackTranslator.forDualstorageCaller( options.error, model, options );
+        // if isOnline not set defaults to navigator.onLine or true if not available
         options.isOnline =  options.isOnline ||
-            result( model.collection, 'isOnline' ) ||
-            (typeof navigator !=='undefined' && navigator.onLine );
+            result( collection, 'isOnline' );
+        if (typeof options.isOnline !== 'boolean') {
+            if  ( typeof navigator !=='undefined') {
+                options.isOnline = navigator.onLine;
+            } else {
+                options.isOnline = true;
+            }
+        }
         // dual syncing only happens when online, can be passed as am option or on collection
         options.dualSync = options.isOnline &&
             ( options.dualSync  ||
-            result( model.collection, 'dualSync' ) ||
-            result( model.collection, 'remote' ) && result( model.collection, 'local' ) );
+            result( collection, 'dualSync' ) ||
+            result( collection, 'remote' ) && result( collection, 'local' ) );
         // indicates currently online, can be a function, defaults to navigator.Online
         options.return = options.return ||
-            result( model.collection, 'return' ) ||
+            result( collection, 'return' ) ||
             'local';
 
         if ( typeof options.isOnline === 'function' ) options.isOnline = options.isOnline();
 
-        console.log('dualSync', method, options , model );
+//        console.log('dualSync', method, options );
 
         // single sync, simple mode
         if ( !options.isOnline || !options.dualSync ) {
 
 //      console.log( 'single sync' , options.remote , options.dualSync , model.dualSync , model );
-            if ( result( model, 'remote' ) || result( model.collection, 'remote' ) ) {
+            // if there is no local copy then always tries remote, regardless off isOnline - this is default BackBone behaviour
+            if ( options.isOnline &&
+                ( result( model, 'remote' ) || result( collection , 'remote' ) ) ) {
                 return onlineSync( method, model, options );
             } else {
                 // sets the dirty flag on any changes made in local mode if dualSync
-                if ( result( model, 'local' ) || result( model.collection, 'local' ) ) {
-                    options.dirty = options.dirty || options.dualSync || ( this.collection && this.collection.dualSync);
-                    local = result( model, 'local' ) || result( model.collection, 'local' );
+                if ( result( model, 'local' ) || result( collection, 'local' ) ) {
+                    options.dirty = options.dirty || options.dualSync || ( collection && collection.dualSync);
+                    local = result( model, 'local' ) || result( collection , 'local' );
                     return localsync( method, model, options );
                 } else {
                     // no local or remote sync, implies not using dualSync features - eg obile validate
@@ -494,7 +506,7 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
             // check if we have dirty records to deal with
             dirty = localsync( 'hasDirtyOrDestroyed', model, options );
             // todo: check not already syncing from previous request?
-            if (dirty) hooks = this.model.collection.syncDirtyAndDestroyed();
+            if (dirty) hooks = collection.syncDirtyAndDestroyed();
             switch ( method ) {
                 // if got unsynced local changes will return local copy only
                 case 'read':
@@ -522,7 +534,7 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                             responseModel = modelUpdatedWithResponse( new model.constructor, resp );
                             localsync( 'create', responseModel, options );
                         }
-                        return success( resp, status, xhr );
+                        return _success( resp, status, xhr );
                     };
                     options.error = function ( resp ) {
                         // will returns local copy if error from say a timeout
@@ -530,8 +542,13 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                     };
                     // return local or remote
                     if ( returned) {
+                        // fetch the remote data and populate cache in background
+                        _success = function () { console.log ('lazy callback'); };
+                        _doXHR (  function () {  return onlineSync( method, model , options ); } );
                         return success (returned);
                     } else {
+                        // call success on xhr.success
+                        _success = success;
                         return _doXHR (  function () {  return onlineSync( method, model , options ); },
                             function () {  return success( localsync( method, model, options ) ); }
                         );
@@ -550,6 +567,7 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                             options.dirty = true;
                             return success( localsync( method, model, options ) );
                         } else if ( typeof error === 'function' ) {
+                            /* TODO - where did this come from is this correct */
                             // remove created record, assuming this only gets called with a collection
                             if ( model.collection.length ) model.collection.pop();
 //console.log('create error ' , resp , model );

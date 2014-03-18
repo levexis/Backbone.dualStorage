@@ -141,6 +141,7 @@ define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
                 coll = new TestCollection();
                 coll.dualSync = false;
                 coll.remote = true;
+                coll.local = false;
                 sinon.stub( $ , 'ajax');
             });
             afterEach ( function() {
