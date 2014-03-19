@@ -64,7 +64,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
             var isLocal = false,
                 created;
             // clearout the call stack so getCall 0 is last all
-            $.ajax.reset();
             created = coll.create ( doc , { success: function () {
                     isLocal = true; // rename cbCalled perhaps
                     if ( typeof callBack === 'function' ) callBack ( doc );
@@ -77,7 +76,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
             });
             // add the _id to the original object as we can then compare deeply to fetched
             doc._id = _id++;
-            if ( !isLocal && !created.validationError && $.ajax.called) $.ajax.getCall(0).args[0].success( doc );
+            if ( !isLocal && !created.validationError && $.ajax.called) $.ajax.getCall( $.ajax.callCount-1 ).args[0].success( doc );
             return created;
             // give it a "proper" id, ie no hyphens like you get from mongo
 //            if ( !isLocal) $.ajax.getCall(0).args[0].success( _.extend ( doc , {_id : _id++ } ) );
@@ -387,6 +386,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     $.ajax.getCall(1).args[0].success();
                     $.ajax.getCall(2).args[0].success();
                     promises.forEach ( _resolvePromise );
+                    Backbone.isSyncing().should.be.false;
                     $.ajax.getCall(3).args[0].success( remote );
                     // should now return clean
                     _dirtyCount = 0;
@@ -397,19 +397,101 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
 //                    expect(result).to.have.members( remote ); dates are formated differently
                     done();
                 });
-                it('should return dirty results on second fetch if queue not yet played back');
-                it('should have fully refreshed collection after queue played back');
-                it('should not lose records if connectivity fails');
-                it('should put all other CRUD errors in error collection');
+                it('should return dirty results on second fetch if queue not yet played back', function (done) {
+                    var _dirtyCount = 0, result = [], remote =  _.union( aList , dList );
+                    function checkDirty ( doc ) {
+                        if ( isDirty( doc ) ) {
+                            _dirtyCount ++;
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    }
+                    _fetch( _.union( aList , dList ) );
+                    // return dirty
+                    result = coll.toJSON();
+                    result.forEach ( checkDirty );
+                    Backbone.isSyncing().should.be.true;
+                    $.ajax.getCall(0).args[0].success();
+                    $.ajax.getCall(1).args[0].success();
+                    // should not create extra call to fetch clean
+                    $.ajax.callCount.should.equal( 3 );
+                    // should now return clean
+                    _dirtyCount = 0;
+                    _fetch( _.union( aList , dList ) );
+                    result = coll.toJSON();
+                    console.log ( result );
+                    result.forEach ( checkDirty );
+                    expect( _dirtyCount ).to.equal(3);
+//                    expect(result).to.have.members( remote ); dates are formated differently
+                    done();
+                });
+                it('should have fully refreshed collection after queue played back',function () {
+                    var _dirtyCount = 0;
+                    function checkDirty ( doc ) {
+                        if ( isDirty( doc ) ) {
+                            _dirtyCount ++;
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    }
+                    coll.syncDirtyAndDestroyed();
+                    $.ajax.getCall(0).args[0].success();
+                    $.ajax.getCall(1).args[0].success();
+                    $.ajax.getCall(2).args[0].success();
+                    coll.fetch ( { dirtyLoad: true } );
+                    coll.toJSON().forEach ( checkDirty );
+                    _dirtyCount.should.equal(0);
+                });
+                it('should not lose or duplicate records from queue if connectivity fails', function( done ) {
+                    var _dirtyCount = 0;
+                    function checkDirty ( doc ) {
+                        if ( isDirty( doc ) ) {
+                            _dirtyCount ++;
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    }
+                    coll.syncDirtyAndDestroyed();
+                    $.ajax.getCall(0).args[0].success( dList[0] );
+                    $.ajax.getCall(1).args[0].error( dList[1] );
+                    $.ajax.getCall(2).args[0].error( dList[2] );
+                    coll.fetch ( { fetchLocal: true } );
+                    coll.toJSON().forEach ( checkDirty );
+                    _dirtyCount.should.equal(2);
+                    coll.length.should.equal(6);
+                    coll.syncDirtyAndDestroyed();
+                    $.ajax.getCall(3).args[0].success();
+                    $.ajax.getCall(4).args[0].success();
+                    coll.length.should.equal(6);
+                    expect ( window.localStorage.getItem('sync error' ) ).to.not.exist;
+                    done();
+                });
+                it('should put all other CUD errors in error collection for debugging' , function ( done ) {
+                    coll.syncDirtyAndDestroyed();
+                    $.ajax.getCall(0).args[0].error({ status : '409', message : 'test' });
+                    $.ajax.getCall(1).args[0].error({ status : '409', message : 'test' });
+                    $.ajax.getCall(2).args[0].error({ status : '409', message : 'test' });
+                    console.log( window.localStorage );
+                    JSON.parse( window.localStorage.getItem('sync error' ) ).length.should.equal(3);
+                    done();
+                });
             });
             describe('when offline' , function() {
                 beforeEach ( function() {
                     _resetIds();
                     window.localStorage.clear();
                     coll = new TestCollection();
+                    coll.isOnline = true;
                     sinon.stub( $ , 'ajax');
                     aList.forEach ( _createDoc );
                     coll.length.should.equal(3);
+                    // localSync called on success or error, otherwise localstorage is not populated and fetch fails
+                    $.ajax.getCall(0).args[0].success();
+                    $.ajax.getCall(1).args[0].error();
+                    $.ajax.getCall(2).args[0].success();
                     // now put offline
                     coll.isOnline = false;
                     dList.forEach ( _createDoc );
@@ -443,8 +525,8 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
         describe('helper method unit level', function() {
             it('should support direct call to syncDirtyAndDestroyed');
             it('should sync records in order they were created');
-            it('should wait for one action to complete before starting another');
-            it('should execute sync asynchronously so app can continue to be used wokrking with offline data');
+            it('should wait for one sync request to complete before starting another');
+            it('should do requests asynchronously so app can continue to be used working with offline data');
             it('should wait for syncing to complete before executing next remote fetch');
         });
     });
