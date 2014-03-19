@@ -22,7 +22,19 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
 
     // contains client key to remote key values
     var _keys = {},
-        _isSyncing = false; // this is a global
+        _isSyncing = false; // this is a package global to ensure one sync queue at a time
+
+
+    Backbone.isSyncing = function () {
+        return _isSyncing;
+    }
+
+    Backbone.stoppedSyncing = function () {
+        _isSyncing = false;
+    }
+    Backbone.startedSyncing = function () {
+        _isSyncing = true;
+    }
 
 // TODO: NEEDS TO BE SMART ABOUT POSTS FIRST AND ADD PUTS BACK TO QUEUE AND THEN DELETES
 // ASYNC=FALSE IS NOT RELIABLE AND KEY MAPPINGS ARE NOT THERE WHEN REQUESTS
@@ -35,7 +47,7 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
         ids = (store && store.split( ',' )) || [];
         _results = [];
         for ( _i = 0, _len = ids.length; _i < _len; _i++ ) {
-            _isSyncing = true;
+            Backbone.startedSyncing();
             id = ids[_i];
             console.log( 'syncing dirty', _i, _len, id, this );
             model = this.get( id );
@@ -98,8 +110,9 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                         delete model.clientId;
                         // re-enable async if disabled
                         $.ajaxSetup( { async : true } );
-                        _isSyncing = false;
                     }
+                    // TODO: should only do this when queue resolved
+                    Backbone.stoppedSyncing();
                     // todo: why delete the url?
                     delete model.url;
                 },
@@ -112,7 +125,7 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                         }
                         // re-enable async if disabled
                         $.ajaxSetup( { async : true } );
-                        _isSyncing = false;
+                        Backbone.stoppedSyncing();
                     }
                 } )
             );
@@ -465,8 +478,8 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                 return onlineSync( method, model, options );
             } else {
                 // sync after dirty business taken care of
-                return $.when.apply( $ , hooks ).then( function () {  return onlineSync( method, model , options ); } ,
-                    function () {  return success( localsync( method, model, options ) ); } );
+                return $.when.apply( $ , hooks ).then( function () {  Backbone.stoppedSyncing(); return onlineSync( method, model , options ); } ,
+                    function () {   Backbone.stoppedSyncing(); return success( localsync( method, model, options ) ); } );
             }
         }
 
@@ -483,6 +496,10 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
                 options.isOnline = true;
             }
         }
+        // if not online then reset syncing, this is a bit of a failsafe should something go wrong
+        if ( !options.isOnline ) {
+            Backbone.stoppedSyncing();
+        }
         // dual syncing only happens when online, can be passed as am option or on collection
         options.dualSync = options.isOnline &&
             ( options.dualSync  ||
@@ -495,7 +512,7 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
 
         if ( typeof options.isOnline === 'function' ) options.isOnline = options.isOnline();
 
-        console.log('dualSync', method, options );
+        console.log('dualSync', Backbone.isSyncing() , method, options );
 
         // single sync, simple mode
         if ( !options.isOnline || !options.dualSync ) {
@@ -523,7 +540,7 @@ if ( typeof window.debug === 'undefined' ) window.debug = { log : console.log};
             dirty = localsync( 'hasDirtyOrDestroyed', model, options );
             // todo: check not already syncing from previous request?
             // isSyncing indicates sync in progress, if so don't add to the queue, this is probably a recursive create
-            if ( !_isSyncing && dirty) {
+            if (  !Backbone.isSyncing()  && dirty) {
                 console.log ('calling syncDirt...');
                 hooks = collection.syncDirtyAndDestroyed();
             }

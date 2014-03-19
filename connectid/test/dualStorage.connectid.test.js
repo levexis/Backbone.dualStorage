@@ -43,6 +43,16 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
         var coll,
             _id = 1,//Math.pow( 10 , 32 ),
             remoteColl = _.union( aList, dList );
+
+        function _resetIds() {
+            _id = 1;
+            function reset ( obj ) {
+                delete obj._id;
+            }
+            aList.forEach ( reset );
+            dList.forEach ( reset );
+            gList.forEach ( reset );
+        }
         /**
          * creates a new document for stubbed out collection
          * @param doc {object} doc to create, will add an _id if remote create set
@@ -94,7 +104,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
         before ( function () {
             TestModel = Backbone.Model.extend({
                 idAttribute: '_id',
-                url : '/api/1/tests',
                 validate: function(attrs, options) {
                     if ( _.has(attrs,'name') ) {
                         var name = attrs.name.toLowerCase();
@@ -120,7 +129,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
         });
         describe('Clean locally synced collections, remote changed', function() {
             beforeEach ( function() {
-                _id = 1;
+                _resetIds();
                 window.localStorage.clear();
                 coll = new TestCollection();
                 sinon.stub( $ , 'ajax');
@@ -175,12 +184,13 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
         });
         describe('Empty locally synced collections', function() {
             beforeEach ( function() {
-                _id = 1;
+                _resetIds();
                 window.localStorage.clear();
                 coll = new TestCollection();
                 sinon.stub( $ , 'ajax');
             });
             afterEach ( function() {
+                Backbone.stoppedSyncing();
                 $.ajax.restore();
             });
             describe('when online' , function() {
@@ -250,9 +260,10 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     // we get array pos as 2nd argument so just resolve!
                     promise.resolve();
                 }
-                beforeEach ( function() {
-                    _id = 1;
+                beforeEach ( function( done ) {
+                    console.log('before');
                     promises = [];
+                    _resetIds();
                     function makePromise () {
                         var deferred = new $.Deferred(),
                             i = promises.length;
@@ -272,13 +283,14 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     promises = [];
                     $.ajax.reset();
                     coll.isOnline = true;
+                    console.log('ready');
+                    done();
                 });
-                afterEach ( function() {
-                    // something isn't working properly here as tests work fine on their own!
-                    $.ajax.reset();
+                afterEach ( function( done ) {
                     $.ajax.restore();
-                    promises = [];
-                    window.localStorage.clear();
+                    Backbone.stoppedSyncing();
+                    console.log('after');
+                    done();
                 });
                 it('should sync dirty records after next read online', function (done) {
                     var _dirtyCount = 0,
@@ -325,35 +337,38 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     promises.forEach ( _resolvePromise );
                     $.ajax.getCall(3).args[0].success();
                 });
-                it('should sync dirty records before next update online' , function () {
+                it('should sync dirty records before next update online' , function ( done ) {
                     var rec = coll.get ( 1 );
                     rec.set ( { updated : true } );
                     rec.save();
                     $.ajax.callCount.should.equal ( 3 );
                     promises.forEach ( _resolvePromise );
+                    console.log ( $.ajax.getCall(3).args );
                     $.ajax.getCall(3).args[0].type.should.equal('PUT');
                     $.ajax.getCall(3).args[0].url.should.equal('/api/1/tests/1');
+                    done();
                 });
-                it('should sync dirty records before next delete online' , function () {
+                it('should sync dirty records before next delete online' , function (done) {
                     var rec = coll.get(1);
                     rec.destroy ( rec );
                     $.ajax.callCount.should.equal ( 3 );
                     promises.forEach ( _resolvePromise );
                     console.log ( $.ajax.getCall(3).args );
                     $.ajax.getCall(3).args[0].type.should.equal('DELETE');
-                    $.ajax.getCall(3).args[0].url.should.equal('/api/1/tests');
+//                    $.ajax.getCall(3).args[0].url.should.equal('/api/1/tests');
                     $.ajax.callCount.should.equal ( 4 );
                     coll.length.should.equal ( 5 );
+                    done();
                 });
-                it('should not create or update a remote record if delete queued', function () {
+                it('should not create or update a remote record if delete queued', function (done) {
                     var rec = coll.findWhere ( { name : dList[0].name } );
                     rec.destroy ( rec );
                     promises.forEach ( _resolvePromise );
                     $.ajax.callCount.should.equal ( 4 );
                     coll.length.should.equal ( 5 );
+                    done();
                 });
-                it('should return remote results from local cache on double fetch' , function () {
-                    _id = 1;
+                it('should return remote results from local cache on double fetch' , function (done) {
                     var _dirtyCount = 0, result = [], remote =  _.union( aList , dList );
                     function checkDirty ( doc ) {
                         if ( isDirty( doc ) ) {
@@ -380,6 +395,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     result.forEach ( checkDirty );
                     expect( _dirtyCount ).to.equal(0);
 //                    expect(result).to.have.members( remote ); dates are formated differently
+                    done();
                 });
                 it('should return dirty results on second fetch if queue not yet played back');
                 it('should have fully refreshed collection after queue played back');
@@ -388,7 +404,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
             });
             describe('when offline' , function() {
                 beforeEach ( function() {
-                    _id = 1;
+                    _resetIds();
                     window.localStorage.clear();
                     coll = new TestCollection();
                     sinon.stub( $ , 'ajax');
