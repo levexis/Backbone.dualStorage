@@ -7,7 +7,7 @@
 // returnFirst =  default is remote if remote and online and no dirty data otherwise local ( or could call Lazy )
 // isOnline = defaults to navigator.onLine but who the fuck capitalizes the L in online! Doesn't try to make requests, does same as if error 0
 
-define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
+define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ , _ ) {
     // identifies a dualStorage generated key rather than a mongodb generaterd one
     function isClientKey ( id ) {
         return (!!id && id.length === 36 && id.match(/-/g).length === 4);
@@ -19,7 +19,16 @@ define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
     describe('test Backbone dualStorage object', function() {
         before ( function () {
             TestModel  = Backbone.Model.extend({
-                idAttribute: '_id'
+                idAttribute: '_id',
+                validate: function(attrs, options) {
+                    if ( _.has(attrs,'name') ) {
+                        var name = attrs.name.toLowerCase();
+                        return ( !name ||
+                            name === 'jon' );
+                    }  else {
+                       return true; // must have name
+                    }
+                }
             });
             TestCollection = Backbone.Collection.extend({
                 local: true, // maintain local copy
@@ -132,7 +141,15 @@ define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
                     done();
                 } });
             });
-            it('should reject invalid models on create');
+            // seems there is some debate about what backbone does with invalid models on create
+            it.skip('should reject invalid models on create', function ( done ) {
+                var model =  new coll.model ( { name: 'Jon' } );
+                coll.add ( model );
+                model.save();
+                coll.length.should.equal(0);
+                // what you actually get is coll.models[0].validationError.should.be.true
+                done();
+            });
         });
         describe('remote only collections', function() {
             var coll;
@@ -177,7 +194,11 @@ define( [ 'dualStorage' , 'jquery' ] ,  function ( Backbone , $ ) {
                 coll.length.should.equal( 0 );
                 $.ajax.should.have.been.calledOnce;
             });
-            it('should reject invalid models on create');
+            // seems need to check validation before create as backbone will add an invalid model
+            it.skip('should reject invalid models on create', function () {
+                coll.create ( new TestModel ( { name: 'Jon' } , { validate: true, error: function() { console.log ( 'error call' ); } } ) );
+                coll.length.should.equal(0);
+            });
         });
     });
 });

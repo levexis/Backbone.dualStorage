@@ -3,7 +3,7 @@
 
  Extends dualStorage to work with mobile apps, support should be added via collection properties. This was designed
  for use with a Backbone Phonegap app.
- 
+
  dualSync = sync online / offline - do both online and offline, enables ®return etc
  remote = fetch remote - remote only ( default behaviour, ignores local cache if dualSync is false
  local = fetch local - local only if remote and dualSync disabled
@@ -18,7 +18,7 @@
 
     var S4, Store, backboneSync, callbackTranslator, dualsync, localsync, modelUpdatedWithResponse, onlineSync, parseRemoteResponse, result;
     // define globals to shut lint up
-    var debug = { log: ( window.debug ? window.debug.log : window.console.log ) } ,
+    var debug = window.debug ? window.debug : window.console ,
         _ = window._,
         $ = window.$,
         Backbone = window.Backbone;
@@ -247,6 +247,7 @@
     };
 
     S4 = function () {
+        //noinspection JSHint
         return (((1 + Math.random()) * 0x10000) | 0).toString( 16 ).substring( 1 );
     };
 
@@ -341,6 +342,7 @@
         Store.prototype.clear = function () {
             var id, _i, _len, _ref;
             _ref = this.records;
+            //noinspection JSHint,JSHint,JSHint
             for ( _i = 0, _len = _ref.length; _i < _len; _i++ ) {
                 id = _ref[_i];
                 localStorage.removeItem( this.name + this.sep + id );
