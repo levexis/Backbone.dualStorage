@@ -2,10 +2,10 @@
  * Tests of more advanced / edge case dualStorage cases for connectid in lazy dualSync mode.
  */
 
-// dualSync = sync online / offline - do both online and offline, enables return etc
+// dualSync = sync online / offline - do both online and offline, enables ®return etc
 // remote = fetch remote - remote only ( default behaviour, ignores local cache if dualSync is false
 // local = fetch local - local only if remote and dualSync disabled
-// return =  default is remote if remote and online and no dirty data otherwise local
+// returns =  default is remote if remote and online and no dirty data otherwise local
 // isOnline = defaults to navigator.onLine but who the fuck capitalizes the L in online! Doesn't try to make requests, does same as if error 0
 
 define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ , _  ) {
@@ -70,7 +70,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 },
                 error: function() {
                     isLocal = true; // rename cbCalled perhaps
-                    console.log( 'error creating' , doc );
                     if ( typeof callBack === 'function' ) callBack ();
                 }
             });
@@ -111,6 +110,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                             name === 'shaun' ||
                             name === 'ian'  );
                     }
+                    return null;
                 }
             });
             TestCollection = Backbone.Collection.extend({
@@ -143,13 +143,13 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 beforeEach ( function() {
                     coll.isOnline = true;
                 });
-                it('should return local version if return = local or not defined' , function () {
-                    coll.return = 'local';
+                it('should return local version if returns = local or not defined' , function () {
+                    coll.returns = 'local';
                     _fetch( remoteColl );
                     coll.length.should.equal(3);
                 });
-                it('should fetch & return remote version if return = remote' , function ( done ) {
-                    coll.return = 'remote';
+                it('should fetch & return remote version if returns = remote' , function ( done ) {
+                    coll.returns = 'remote';
                     _fetch( remoteColl , function () {
                         coll.length.should.equal(6);
                         done();
@@ -161,8 +161,8 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 beforeEach ( function() {
                     coll.isOnline = false;
                 });
-                it('should ignore return = remote', function () {
-                    coll.return = 'remote';
+                it('should ignore returns = remote', function () {
+                    coll.returns = 'remote';
                     _fetch( remoteColl );
                     coll.length.should.equal(3);
                 });
@@ -196,8 +196,8 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 beforeEach ( function() {
                     coll.isOnline = true;
                 });
-                it('should fetch and return remote even if return = local' , function ( done ) {
-                    coll.return = 'local';
+                it('should fetch and return remote even if returns = local' , function ( done ) {
+                    coll.returns = 'local';
                     _fetch( remoteColl , function () {
                         $.ajax.should.have.been.calledOnce;
                         done();
@@ -225,7 +225,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     $.ajax.should.have.been.called;
                 });
                 it('should create and return a new blank local collection regardless of return', function() {
-                    coll.return = 'remote';
+                    coll.returns = 'remote';
                     _fetch( remoteColl );
                     coll.length.should.equal( 0 );
                 });
@@ -260,7 +260,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     promise.resolve();
                 }
                 beforeEach ( function( done ) {
-                    console.log('before');
                     promises = [];
                     _resetIds();
                     function makePromise () {
@@ -282,13 +281,11 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     promises = [];
                     $.ajax.reset();
                     coll.isOnline = true;
-                    console.log('ready');
                     done();
                 });
                 afterEach ( function( done ) {
                     $.ajax.restore();
                     Backbone.stoppedSyncing();
-                    console.log('after');
                     done();
                 });
                 it('should sync dirty records after next read online', function (done) {
@@ -342,7 +339,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     rec.save();
                     $.ajax.callCount.should.equal ( 3 );
                     promises.forEach ( _resolvePromise );
-                    console.log ( $.ajax.getCall(3).args );
                     $.ajax.getCall(3).args[0].type.should.equal('PUT');
                     $.ajax.getCall(3).args[0].url.should.equal('/api/1/tests/1');
                     done();
@@ -352,7 +348,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     rec.destroy ( rec );
                     $.ajax.callCount.should.equal ( 3 );
                     promises.forEach ( _resolvePromise );
-                    console.log ( $.ajax.getCall(3).args );
                     $.ajax.getCall(3).args[0].type.should.equal('DELETE');
 //                    $.ajax.getCall(3).args[0].url.should.equal('/api/1/tests');
                     $.ajax.callCount.should.equal ( 4 );
@@ -368,7 +363,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     done();
                 });
                 it('should return remote results from local cache on double fetch' , function (done) {
-                    var _dirtyCount = 0, result = [], remote =  _.union( aList , dList );
+                    var _dirtyCount = 0, result, remote =  _.union( aList , dList );
                     function checkDirty ( doc ) {
                         if ( isDirty( doc ) ) {
                             _dirtyCount ++;
@@ -394,7 +389,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     result = coll.toJSON();
                     result.forEach ( checkDirty );
                     expect( _dirtyCount ).to.equal(0);
-//                    expect(result).to.have.members( remote ); dates are formated differently
+//                    expect(result).to.have.members( remote ); dates are formatted differently
                     done();
                 });
                 it('should return dirty results on second fetch if queue not yet played back', function (done) {
@@ -407,7 +402,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                             return false;
                         }
                     }
-                    _fetch( _.union( aList , dList ) );
+                    _fetch( remote );
                     // return dirty
                     result = coll.toJSON();
                     result.forEach ( checkDirty );
@@ -418,12 +413,11 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     $.ajax.callCount.should.equal( 3 );
                     // should now return clean
                     _dirtyCount = 0;
-                    _fetch( _.union( aList , dList ) );
+                    _fetch( _.union( remote ) );
                     result = coll.toJSON();
-                    console.log ( result );
                     result.forEach ( checkDirty );
                     expect( _dirtyCount ).to.equal(3);
-//                    expect(result).to.have.members( remote ); dates are formated differently
+//                    expect(result).to.have.members( remote ); dates are formatted differently
                     done();
                 });
                 it('should have fully refreshed collection after queue played back',function () {
@@ -474,7 +468,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     $.ajax.getCall(0).args[0].error({ status : '409', message : 'test' });
                     $.ajax.getCall(1).args[0].error({ status : '409', message : 'test' });
                     $.ajax.getCall(2).args[0].error({ status : '409', message : 'test' });
-                    console.log( window.localStorage );
                     JSON.parse( window.localStorage.getItem('sync error' ) ).length.should.equal(3);
                     done();
                 });
@@ -522,12 +515,69 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 });
              });
         });
-        describe('helper method unit level', function() {
-            it('should support direct call to syncDirtyAndDestroyed');
-            it('should sync records in order they were created');
-            it('should wait for one sync request to complete before starting another');
-            it('should do requests asynchronously so app can continue to be used working with offline data');
-            it('should wait for syncing to complete before executing next remote fetch');
+        describe('helper methods and unit level probing', function() {
+            var promises;
+            function _resolvePromise ( promise  ) {
+                // we get array pos as 2nd argument so just resolve!
+                promise.resolve();
+            }
+            beforeEach ( function( done ) {
+                promises = [];
+                _resetIds();
+                function makePromise () {
+                    var deferred = new $.Deferred();
+                    promises.push ( deferred );
+                    return deferred.promise();
+                }
+                window.localStorage.clear();
+                coll = new TestCollection();
+                coll.isOnline = true;
+                sinon.stub( $ , 'ajax' , makePromise);
+                aList.forEach ( _createDoc );
+                coll.length.should.equal(3);
+                // now put offline
+                coll.isOnline = false;
+                dList.forEach ( _createDoc );
+                coll.length.should.equal(6);
+                promises = [];
+                $.ajax.reset();
+                coll.isOnline = true;
+                done();
+            });
+            afterEach ( function() {
+                $.ajax.restore();
+                Backbone.stoppedSyncing();
+            });
+            it('should support direct call to syncDirtyAndDestroyed', function () {
+                coll.syncDirtyAndDestroyed();
+                $.ajax.getCall(0).args[0].success();
+                $.ajax.getCall(1).args[0].success();
+                $.ajax.getCall(2).args[0].success();
+                coll.fetch ( { fetchLocal: true } );
+                coll.length.should.equal(6);
+            });
+            it('should sync records in order they were created', function () {
+                coll.syncDirtyAndDestroyed();
+                $.ajax.getCall(0).args[0].data.should.contain( dList[0].name );
+                $.ajax.getCall(1).args[0].data.should.contain( dList[1].name );
+                $.ajax.getCall(2).args[0].data.should.contain( dList[2].name );
+            });
+            // not implemented - will not start a new dirty sync if old one not completed could check new dirty records added whilst syncing
+            it('should wait for one sync request to complete before starting another' , function () {
+                coll.syncDirtyAndDestroyed();
+                _createDoc ( gList[0] );
+                _createDoc ( gList[1] );
+                // should now have 5 dirty records 3 of which are syncing
+                console.log(window.localStorage);
+            });
+            it('should do requests asynchronously so app can continue to be used working with offline data'); // can only do this with an e2e test to check UI is responsive
+            it('should wait for syncing to complete before executing next remote fetch', function () {
+                _fetch ( _.union ( aList , dList ) );
+                $.ajax.callCount.should.equal ( 3 );
+                promises.forEach ( _resolvePromise );
+                $.ajax.callCount.should.equal ( 4 );
+                $.ajax.getCall(3).args[0].type.should.equal ('GET');
+            });
         });
     });
 });
