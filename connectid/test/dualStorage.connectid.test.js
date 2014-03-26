@@ -131,6 +131,9 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 _resetIds();
                 window.localStorage.clear();
                 coll = new TestCollection();
+                coll.remote = true;
+                coll.local = true;
+                coll.dualSync = true;
                 sinon.stub( $ , 'ajax');
                 aList.forEach ( _createDoc );
                 coll.length.should.equal(3);
@@ -155,7 +158,14 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                         done();
                     });
                 });
-                it('should return local if lost connectivity / remote timeout');
+                it('should return remote if nothing stored locally, regardless of returns', function(done) {
+                    window.localStorage.clear();
+                    coll.returns = 'local';
+                    _fetch( aList , function () {
+                        coll.length.should.equal(3);
+                        done();
+                    });
+                });
             });
             describe('when offline' , function() {
                 beforeEach ( function() {
@@ -270,6 +280,9 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     }
                     window.localStorage.clear();
                     coll = new TestCollection();
+                    coll.dualSync = true;
+                    coll.local = true;
+                    coll.remote = true;
                     coll.isOnline = true;
                     sinon.stub( $ , 'ajax' , makePromise);
                     aList.forEach ( _createDoc );
@@ -407,16 +420,18 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     result = coll.toJSON();
                     result.forEach ( checkDirty );
                     Backbone.isSyncing().should.be.true;
-                    $.ajax.getCall(0).args[0].success();
-                    $.ajax.getCall(1).args[0].success();
-                    // should not create extra call to fetch clean
                     $.ajax.callCount.should.equal( 3 );
+                    $.ajax.getCall(0).args[0].success( dList[0] );
+                    $.ajax.getCall(1).args[0].success( dList[1] );
+//                    $.ajax.getCall(3).args[0].success();
+                    // should not create extra call to fetch clean
                     // should now return clean
                     _dirtyCount = 0;
-                    _fetch( _.union( remote ) );
+                    _fetch( remote  );
                     result = coll.toJSON();
                     result.forEach ( checkDirty );
-                    expect( _dirtyCount ).to.equal(3);
+                    expect( _dirtyCount ).to.equal(1);
+                    coll.length.should.equal (6);
 //                    expect(result).to.have.members( remote ); dates are formatted differently
                     done();
                 });
