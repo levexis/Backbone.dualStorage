@@ -609,7 +609,9 @@
         options.isOnline =  options.isOnline ||
             result( collection, 'isOnline' );
         if (typeof options.isOnline !== 'boolean') {
-            if  ( typeof navigator !=='undefined') {
+            if ( typeof isOnline === 'function' ) {
+                isOnline = options.isOnline();
+            } else if  ( typeof navigator !=='undefined') {
                 options.isOnline = navigator.onLine;
             } else {
                 options.isOnline = true;
