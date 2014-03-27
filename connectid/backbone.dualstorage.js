@@ -147,8 +147,6 @@
                 _cleanupDirtyModel ( that, model , null , options );
             }
             // remove new model from local collection
-//            window.localStorage.removeItem( model.url + model.id );
-           options.store.destroy (model);
             // re-enable async if disabled
             $.ajaxSetup( { async : true } );
             Backbone.stoppedSyncing();
@@ -167,7 +165,9 @@
             debug.log( 'syncing dirty', _i, _len, id, this );
             model = this.get( id );
             if ( !model ) {
-                throw new Error( 'dirty model id [' + id + ']' );
+                _cleanupDirtyModel( this, new this.model( { jerryHallId: id, url: this.url } ) , { store: new Store ( this.url ) });
+                // this could be because someone has logged in on the same machine and the other person hasn't logged out
+                debug.log( 'dirty model id did not exist [' + id + '] , cleared' );
             }
             // if the model is new (has a backbone id) then remove the id so creates new record
             // the local cache is cleared when the data is refreshed from server
@@ -610,7 +610,7 @@
             result( collection, 'isOnline' );
         if (typeof options.isOnline !== 'boolean') {
             if ( typeof isOnline === 'function' ) {
-                isOnline = options.isOnline();
+                options.isOnline = options.isOnline();
             } else if  ( typeof navigator !=='undefined') {
                 options.isOnline = navigator.onLine;
             } else {
