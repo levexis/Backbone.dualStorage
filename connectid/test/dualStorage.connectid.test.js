@@ -122,7 +122,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 isOnline : true,
                 url : '/api/1/tests', // doesnt exist
                 comparator: function( doc ) {
-                    return doc.name;
+                    return doc.get('name');
                 }
             });
         });
@@ -166,6 +166,13 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                         done();
                     });
                 });
+                it('should sort alphabetically', function(done) {
+                    gList.forEach ( _createDoc );
+                    dList.forEach ( _createDoc );
+                    coll.fetch( _.union( gList , dList ) );
+                    coll.toJSON().pop().name.should.equal('Henry');
+                    done();
+                });
             });
             describe('when offline' , function() {
                 beforeEach ( function() {
@@ -188,6 +195,13 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     coll.isOnline = function () { return false };
                     _fetch( remoteColl );
                     coll.length.should.equal(3);
+                });
+                it('should sort alphabetically', function(done) {
+                    gList.forEach ( _createDoc );
+                    dList.forEach ( _createDoc );
+                    coll.fetch( _.union( gList , dList ) );
+                    coll.toJSON().pop().name.should.equal('Henry');
+                    done();
                 });
             });
         });
