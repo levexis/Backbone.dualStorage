@@ -294,6 +294,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     promises = [];
                     $.ajax.reset();
                     coll.isOnline = true;
+                    console.log ( 'READY' );
                     done();
                 });
                 afterEach ( function( done ) {
@@ -435,6 +436,42 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
 //                    expect(result).to.have.members( remote ); dates are formatted differently
                     done();
                 });
+                it('should behave the same if a new collection is created from local copy', function (done) {
+                    var _dirtyCount = 0, result = [], remote =  _.union( aList , dList );
+                    function checkDirty ( doc ) {
+                        if ( isDirty( doc ) ) {
+                            _dirtyCount ++;
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    }
+                    coll = new TestCollection();
+                    coll.dualSync = true;
+                    coll.local = true;
+                    coll.remote = true;
+                    coll.isOnline = true;
+                    _fetch( remote );
+                    // return dirty
+                    result = coll.toJSON();
+                    result.forEach ( checkDirty );
+                    Backbone.isSyncing().should.be.true;
+                    $.ajax.callCount.should.equal( 3 );
+                    $.ajax.getCall(0).args[0].success( dList[0] );
+                    $.ajax.getCall(1).args[0].success( dList[1] );
+//                    $.ajax.getCall(3).args[0].success();
+                    // should not create extra call to fetch clean
+                    // should now return clean
+                    _dirtyCount = 0;
+                    _fetch( remote  );
+                    result = coll.toJSON();
+                    result.forEach ( checkDirty );
+                    expect( _dirtyCount ).to.equal(1);
+                    coll.length.should.equal (6);
+//                    expect(result).to.have.members( remote ); dates are formatted differently
+                    done();
+                });
+
                 it('should have fully refreshed collection after queue played back',function () {
                     var _dirtyCount = 0;
                     function checkDirty ( doc ) {
@@ -446,9 +483,9 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                         }
                     }
                     coll.syncDirtyAndDestroyed();
-                    $.ajax.getCall(0).args[0].success();
-                    $.ajax.getCall(1).args[0].success();
-                    $.ajax.getCall(2).args[0].success();
+                    $.ajax.getCall(0).args[0].success( aList[0] );
+                    $.ajax.getCall(1).args[0].success( aList[1] );
+                    $.ajax.getCall(2).args[0].success( aList[2] );
                     coll.fetch ( { dirtyLoad: true } );
                     coll.toJSON().forEach ( checkDirty );
                     _dirtyCount.should.equal(0);

@@ -34,11 +34,13 @@
         return _isSyncing;
     };
     // resets syncing flag and clears syncing config of ajax request mode ( ie sync to async );
-    Backbone.stoppedSyncing = function () {
+    Backbone.stoppedSyncing = function ( msg ) {
+        debug.log ('stopped syncing', msg );
         _isSyncing = false;
         $.ajaxSetup( { async : true  } );
     };
-    Backbone.startedSyncing = function () {
+    Backbone.startedSyncing = function ( msg ) {
+        debug.log ('started syncing', msg );
         _isSyncing = true;
     };
 
@@ -149,7 +151,7 @@
             // remove new model from local collection
             // re-enable async if disabled
             $.ajaxSetup( { async : true } );
-            Backbone.stoppedSyncing();
+            Backbone.stoppedSyncing( 'sync ajax error' );
             delete model.url;
             delete model.dirtySync;
             delete model.jerryHallId;
@@ -160,56 +162,57 @@
         ids = (store && store.split( ',' )) || [];
         _results = [];
         for ( _i = 0, _len = ids.length; _i < _len; _i++ ) {
-            Backbone.startedSyncing();
             id = ids[_i];
+            Backbone.startedSyncing( this.url + '/' + id);
             debug.log( 'syncing dirty', _i, _len, id, this );
             model = this.get( id );
             if ( !model ) {
                 _cleanupDirtyModel( this, new this.model( { jerryHallId: id, url: this.url } ) , { store: new Store ( this.url ) });
                 // this could be because someone has logged in on the same machine and the other person hasn't logged out
                 debug.log( 'dirty model id did not exist [' + id + '] , cleared' );
-            }
-            // if the model is new (has a backbone id) then remove the id so creates new record
-            // the local cache is cleared when the data is refreshed from server
-            debug.log( 'syncing for update', model, model.idAttribute, model.get( model.idAttribute ), isClientKey( model.get( model.idAttribute ) ), this );
-            if ( isClientKey( id ) ) {
-                // have we already got a key mapping for this id, eg created already in this batch and now updating
-                if ( typeof _keys[id] === 'undefined' ) {
-                    // remove temporary id on new record creation
-                    if ( model.idAttribute ) model.unset( model.idAttribute );
-                    // and remove the id so posts new
-                    delete model.id;
-//                    debug.log( 'new model', model );
-                    model.jerryHallId = id;
-                    // this creates a stub which may get referenced by later requests if fired sequentially, eg create then update or as a foreign key
-                    _keys[id] = 'stub' + _i;
-                } else {
-                    if ( this.model.prototype.idAttribute ) model.set( this.model.prototype.idAttribute, _keys[id] );
-                    // and remove the id so posts new
-                    model.id = _keys[id];
-                }
             } else {
-                // why would we get here
-                debug.log ( 'not a client key' , id );
-            }
-            model.url = url;
-            model.dirtySync = true;
+                // if the model is new (has a backbone id) then remove the id so creates new record
+                // the local cache is cleared when the data is refreshed from server
+                debug.log( 'syncing for update', model, model.idAttribute, model.get( model.idAttribute ), isClientKey( model.get( model.idAttribute ) ), this );
+                if ( isClientKey( id ) ) {
+                    // have we already got a key mapping for this id, eg created already in this batch and now updating
+                    if ( typeof _keys[id] === 'undefined' ) {
+                        // remove temporary id on new record creation
+                        if ( model.idAttribute ) model.unset( model.idAttribute );
+                        // and remove the id so posts new
+                        delete model.id;
+    //                    debug.log( 'new model', model );
+                        model.jerryHallId = id;
+                        // this creates a stub which may get referenced by later requests if fired sequentially, eg create then update or as a foreign key
+                        _keys[id] = 'stub' + _i;
+                    } else {
+                        if ( this.model.prototype.idAttribute ) model.set( this.model.prototype.idAttribute, _keys[id] );
+                        // and remove the id so posts new
+                        model.id = _keys[id];
+                    }
+                } else {
+                    // why would we get here
+                    debug.log ( 'not a client key' , id );
+                }
+                model.url = url;
+                model.dirtySync = true;
 
-            //TODO: refactor this hack to force call order or just remove this async = true line
-            // hacky approach to keeping in sync - unlikely to work as will always default to last in thread before making requests
-            // might work with callbacks
-            $.ajaxSetup( {
-                async : model.id ? true : false
-            } );
-            // model.save
-            _results.push( model.save( {
-                    dualSync : true,
-                    remote : true
-                },
-                { success : _successFn,
-                    error : _errorFn
-                })
-            );
+                //TODO: refactor this hack to force call order or just remove this async = true line
+                // hacky approach to keeping in sync - unlikely to work as will always default to last in thread before making requests
+                // might work with callbacks
+                $.ajaxSetup( {
+                    async : model.id ? true : false
+                } );
+                // model.save
+                _results.push( model.save( {
+                        dualSync : true,
+                        remote : true
+                    },
+                    { success : _successFn,
+                        error : _errorFn
+                    })
+                );
+            }
         }
         return _results;
     };
@@ -268,26 +271,25 @@
      * @returns array of xhr requests generated
      */
     Backbone.Collection.prototype.syncDirtyAndDestroyed = function () {
-
-        var that = this;
+        var models, dirty,
+            Model = this.model || Backbone.Model,
+            collection = this;
+        // makes a model out of an object so can be put into backbone collection
+        function _modeller ( model ) {
+            if ( model instanceof Backbone.Model ) {
+                collection.models.push( model );
+            } else {
+                model = new Model( model );
+            }
+            collection.add ( model );
+        }
         // if called before local copy loaded then do a localSync first
         if ( !this.models.length ) {
-//        debug.log ('read');
-            this.models = this.fetch( { dirtyLoad : true,
-                // local sync will execute this straight away
-                success : function () {
-                    return _dirtyCB( that );
-                }
-            } );
-        } else {
-            return _dirtyCB( this );
+            models = this.fetch( { dirtyLoad : true, ignoreCallbacks : true } ) || [];
+            models.forEach( _modeller );
         }
-        function _dirtyCB( that ) {
-            var dirty = that.syncDirty();
-            // underscore depency - should be in shared libs
-            return _.union( dirty, that.syncDestroyed() );
-        }
-
+        dirty = this.syncDirty();
+        return _.union( dirty, this.syncDestroyed() );
     };
 
     S4 = function () {
@@ -309,7 +311,8 @@
         };
 
         Store.prototype.save = function () {
-            return localStorage.setItem( this.name, this.records.join( ',' ) );
+            // make sure there are no duplicate ids if items are added twice somehow
+            return localStorage.setItem( this.name, _.uniq( this.records ).join( ',' ) );
         };
 
         Store.prototype.recordsOn = function ( key ) {
@@ -369,6 +372,7 @@
             }
 //      debug.log('storing', this.name + this.sep + model.id, JSON.stringify(model), model);
             localStorage.setItem( this.name + this.sep + model.id, JSON.stringify( model ) );
+            // check its not already there
             this.records.push( model.id.toString() );
             this.save();
             return model;
@@ -472,9 +476,18 @@
             switch ( method ) {
                 case 'read':
                     if ( model.id ) {
-                        return store.find( model );
+                        return store.find( );
                     } else {
                         return store.findAll();
+                        /* investigating issue where backbone collection.models doesn't have models in it just objects
+                        var models = [],
+                            Model = options.collection && typeof options.collection.model ==='function' && options.collection.model instanceof Backbone.Model ? options.collection.model : Backbone.Model;
+                            return store.findAll();
+                            store.findAll().forEach (function ( model ) {
+                                models.push( new Model ( model ) );
+                            });
+                            return models;
+                            */
                     }
                     break;
                 case 'hasDirtyOrDestroyed':
@@ -567,14 +580,13 @@
 
 
     // model contains the model being CUD so collection is in model.collection
-    // if reading then called in collection context so colection model then conatins models
+    // if reading then called in collection context so collection model then conatins models
     // our config is stored in the collection prototype
     dualsync = function ( method, model, options ) {
         var error, local, originalModel, success , returned , dirty , hooks, _success,
            collection = model.collection || this;
         options = options || {};
-        // dirtyLoad option offers route to fetch dirty records for sync before fetch
-        if ( options.dirtyLoad ) return localsync( method, model, options );
+        options.collection = collection;
 
         /*
             this does a load of XHRs and calls a callback when complete, returns the promise.
@@ -585,11 +597,11 @@
             } else {
                 // sync after dirty business taken care of
                 return $.when.apply( $ , hooks ).then( function () {
-                        Backbone.stoppedSyncing();
+                        Backbone.stoppedSyncing( 'promise fulfilled' );
                         return successFn( method, model , options );
                     } ,
                     function () {
-                        Backbone.stoppedSyncing();
+                        Backbone.stoppedSyncing( 'promise failed' );
                         return errorFn ( method, model, options );
                     }
                 );
@@ -598,6 +610,11 @@
 
         options.storeName = result( collection, 'url' ) || result( model, 'url' );
         options.store = new Store ( options.storeName );
+
+        // dirtyLoad option offers route to fetch dirty records for sync before fetch, needs store / name
+        if ( options.dirtyLoad ) {
+            return localsync( method, model, options );
+        }
 
         options.success = callbackTranslator.forDualstorageCaller( options.success, model, options );
         options.error = callbackTranslator.forDualstorageCaller( options.error, model, options );
@@ -609,17 +626,19 @@
         options.isOnline =  options.isOnline ||
             result( collection, 'isOnline' );
         if (typeof options.isOnline !== 'boolean') {
-            if ( typeof isOnline === 'function' ) {
-                options.isOnline = options.isOnline();
+            if (typeof options.isOnline !== 'string') {
+                options.isOnline = !(!options.isOnline || options.isOnline === 'NONE' );
+            // use html5 if available
             } else if  ( typeof navigator !=='undefined') {
                 options.isOnline = navigator.onLine;
+            // default to online
             } else {
                 options.isOnline = true;
             }
         }
         // if not online then reset syncing, this is a bit of a failsafe should something go wrong
         if ( !options.isOnline ) {
-            Backbone.stoppedSyncing();
+            Backbone.stoppedSyncing('offline');
         }
         // dual syncing only happens when online, can be passed as am option or on collection
         options.dualSync = options.isOnline &&
@@ -707,8 +726,12 @@
                     // return local or remote
                     if ( returned) {
                         // fetch the remote data and populate cache in background
-                        _success = function ( resp , status, xhr ) { debug.log ('lazy callback', resp , status, xhr); };
+                        _success = function ( resp , status, xhr ) {
+                            Backbone.stoppedSyncing();
+                            debug.log ('lazy callback refresh local after fetch', resp , status, xhr);
+                        };
                         _doXHRs (  hooks, function () {  return onlineSync( method, model , options ); } );
+                        // TODO: do we really need to call backbone success as well as calls sync again? localsync is now returning models
                         return success (returned);
                     } else {
                         // call success on xhr.success
