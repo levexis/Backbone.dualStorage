@@ -87,7 +87,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 coll.create ( new TestModel ( returnVal ) , { success: function( model , response ) {
                     $.ajax.should.not.have.been.called;
                     // local keys will be in backbone format which is a string containing four hyphens
-                    expect (isClientKey( coll.toJSON()[0]._id) ).to.be.ok;                ;
+                    expect (isClientKey( coll.toJSON()[0]._id) ).to.be.ok;
                     done();
                     }
                 });
