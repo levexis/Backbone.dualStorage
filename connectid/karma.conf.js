@@ -24,10 +24,19 @@ module.exports = function(config) {
 
         // test results reporter to use
         // possible values: 'dots', 'progress', 'junit', 'growl', 'coverage'
-        reporters: ['progress', 'dots' ,'html'], // need to install spec using
+        reporters: ['progress', 'dots' ,'html' , 'coverage'], // need to install spec using
+
+        preprocessors: {
+            "./backbone.dualstorage.js": "coverage"
+        },
 
         htmlReporter: {
             outputFile: 'test/report.html'
+        },
+        coverageReporter: {
+            type : 'html',
+            dir : 'coverage/',
+            file : 'coverage.html'
         },
 
         // web server port

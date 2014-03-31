@@ -198,7 +198,8 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 });
                 it('should fetch and return remote even if returns = local' , function ( done ) {
                     coll.returns = 'local';
-                    _fetch( remoteColl , function () {
+                    _fetch( aList  , function () {
+                        coll.length.should.equal(3);
                         $.ajax.should.have.been.calledOnce;
                         done();
                     });
@@ -206,7 +207,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 it('should not make a localStorage copy if dualSync not enabled for collection (default Backbone Behaviour)', function ( done ) {
                     coll.dualSync = false;
                     coll.local = false;
-                    _fetch( remoteColl , function () {
+                    _fetch( aList  , function () {
                         window.localStorage.length.should.equal( 0 );
                         $.ajax.should.have.been.called;
                         done();
