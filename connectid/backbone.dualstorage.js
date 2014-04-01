@@ -12,7 +12,7 @@
 
  not isOnline can be passed a function for use with native html5 apps, eg phonegap.
  */
-// todo: poll $.active for _isSyncing in case it gets stuck
+// todo: poll $.active for _isSyncing in case its stuck
 /*jslint plusplus: true */
 (function () {
     "use strict";
@@ -29,11 +29,22 @@
     // contains client key to remote key values
     var _keys = {},
         _isSyncing = false,
-        _deferred; // this is a package global to ensure one sync queue at a time
+        _isRefreshing = false,
+        _deferred, // this is a package global to ensure one sync queue at a time
+        _lastActive,
+        TIMEOUT = 10000;
 
     Backbone.connectid = {
         // returns a promise or false
         isSyncing : function () {
+            // check for active ajax requests to prevent getting stuck
+            if ( _isSyncing) {
+                if ($.active || $.ajax.active ) {
+                    _lastActive = new Date();
+                } else if ( ( new Date() ) .getTime() - _lastActive.getTime() > TIMEOUT  ) {
+                    this.stoppedSyncing( 'timeout ' + ( ( new Date() ) .getTime() - _lastActive.getTime() ), false );
+                }
+            }
             return _isSyncing ? _deferred.promise() : false;
         },
         /*
@@ -56,11 +67,13 @@
         },
         startedSyncing : function ( msg ) {
             debug.log( 'started syncing', _isSyncing, msg );
+            _lastActive = new Date();
             // reset the keys as should have all been used by now
             if ( !_isSyncing ) {
                 // if these are not reset memory usage could grow over time
                 _keys = {};
                 _deferred = new $.Deferred();
+                _isRefreshing = false; // if we start getting errors we force a refresh at the end of the run
             }
             _isSyncing = true;
             return _deferred.promise();
@@ -90,7 +103,7 @@
     }
     /*
 
-    /*
+     /*
      * removes item from comma separated list
      * @param {string} list comma separated
      * @param {string} item
@@ -105,7 +118,7 @@
                 outList = outList.substring(0, outList.length-1 );
             }
         } else {
-            outList = inList + '';
+            outList = inList || '';
         }
         return outList;
     }
@@ -113,24 +126,32 @@
      * deletes old dirty record and returns the new key for the model so as to keep local collection in sync
      */
     function _cleanupDirtyModel (collection, model , response, options) {
-        var newKey, jerryHall,
-            dirtyList = localStorage.getItem( '' + model.url + '_dirty' );
-        // if the id is not changed then no response form the server so no copy to delete
+        var newKey, jerryHall, url, dirtyList;
+
+        url = collection.url || model.url;
+        // on updates model.url is function that points to actual url called
+        if ( typeof model.url !== 'string' ) {
+            url = model.urlRoot || collection.model.prototype.urlRoot || collection.model.prototype.url;
+        }
+        dirtyList = localStorage.getItem( '' + url + '_dirty' );
+        // remove from the dirty list regardless of key type
+        dirtyList = _removeItem ( dirtyList, model.jerryHallId || model.id );
+        if (dirtyList && dirtyList.length) {
+            localStorage.setItem( '' + url + '_dirty', dirtyList );
+        } else {
+            localStorage.removeItem( '' + url + '_dirty' );
+        }
+        // if the id has not changed then no response from the server so no copy to delete
         if ( model.jerryHallId && model.jerryHallId !== model.id) {
-            newKey = model.get( 'id' );
+            newKey = model.id;
             // remove key from dirty list
-            dirtyList = _removeItem ( dirtyList, model.jerryHallId );
-            if (dirtyList.length) {
-                localStorage.setItem( '' + model.url + '_dirty', dirtyList );
-            } else {
-                localStorage.removeItem( '' + model.url + '_dirty' );
-            }
-            // delete dirty version and update keys array to value from backend
+            // delete dirty (temp) version and update keys array to value from backend
             //old model
             jerryHall = collection.get( model.jerryHallId );
             if ( jerryHall) {
+                console.log('destroying', model.jerryHallId , response, options);
                 jerryHall.destroy({  local: true, remote: false, dualSync: false} );
-                collection.remove( jerryHall , { local: true, remote: false, dualSync: false}  );
+                collection.remove( jerryHall , { local: true, remote: false, dualSync: false , silent:true }  );
             } else {
                 // remove url manually from local storage
                 options.store.destroy( { id: model.jerryHallId} );
@@ -148,9 +169,10 @@
         var id, ids, model, store, url, _i, _len, _results, _successFn, _errorFn,
             that = this;
         /* TODO is this an AJAX success and not a backbone success function in which case it may be function( resp , xhr, options ) {
-           if so we'll need to straighten a load of stuff back out - i think its only called internall by localsync on success which
-           handles the ajax and updates the model, otherwise we can put the model and collection in scope*/
+         if so we'll need to straighten a load of stuff back out - i think its only called internall by localsync on success which
+         handles the ajax and updates the model, otherwise we can put the model and collection in scope*/
         _successFn = function ( model, response , options ) {
+            console.log ('sync success', response);
             var newKey;
             // need to refresh store as scope create when original request was made
             options.store = new Store ( options.store.name );
@@ -164,12 +186,14 @@
                 // re-enable async if disabled
                 $.ajaxSetup( { async : true } );
             }
+            console.log ('synced',model.id,localStorage.getItem(model.url + '_dirty') );
             // cleaning up
             delete model.url;
             delete model.dirtySync;
             delete model.jerryHallId;
         };
         _errorFn = function( model, xhr, options ) {
+            console.log ('sync error', model);
             // need to refresh store as scope create when original request was made
             options.store = new Store ( options.store.name );
             // remove dirty if error returned from backend, if status is 0 then that means the server timed out so should try again
@@ -178,12 +202,31 @@
                 // logs to local storage, does not retry just there for debugging
                 var errors = localStorage.getItem('sync error') || [];
                 if ( errors.length ) errors = JSON.parse ( errors);
-                errors.push ( [ model.url + 'dirty', xhr ] );
+                errors.push ( [ model.url + '_dirty', xhr ] );
                 localStorage.setItem( 'sync error' , JSON.stringify( errors  ));
-                debug.log( 'sync error', model.url + 'dirty', xhr );
+                debug.log( 'sync error', model.url + '_dirty', xhr );
                 // clear out dirty cache
                 // call cleanup dirty model so item is not done again
                 _cleanupDirtyModel ( that, model , null , options );
+                // need to do a refresh after syncing complete to straighten things out
+                if (!_isRefreshing) {
+                    that.fetch( { returns : 'remote',
+                        // attempt to reload the current route
+                        success : function () {
+                            window.setTimeout( function () {
+                                try {
+                                    var frag = Backbone.history.fragment;
+                                    debug.log( 'router refresh on error', frag );
+                                    Backbone.history.fragment = null;
+                                    Backbone.history.navigate( frag, true );
+                                } catch ( err ) {
+                                    debug.log( 'unable to refesh router after error with', that, err );
+                                }
+                            })
+                        }
+                    } );
+                }
+                _isRefreshing = true;
             } else {
                 Backbone.connectid.stoppedSyncing( 'sync ajax timeout' );
             }
@@ -195,6 +238,7 @@
         url = result( this, 'url' );
         store = localStorage.getItem( '' + url + '_dirty' );
         ids = (store && store.split( ',' )) || [];
+        console.log ('dirt store', Backbone.connectid.isSyncing(), url, store,ids  );
         _results = [];
         for ( _i = 0, _len = ids.length; _i < _len; _i++ ) {
             id = ids[_i];
@@ -202,13 +246,17 @@
             debug.log( 'syncing dirty', _i, _len, id, this );
             model = this.get( id );
             if ( !model ) {
-                _cleanupDirtyModel( this, new this.model( { jerryHallId: id, url: this.url } ) , { store: new Store ( this.url ) });
-                // this could be because someone has logged in on the same machine and the other person hasn't logged out
+                store = _removeItem (store, id  );
+                if (store.length) {
+                    localStorage.setItem( '' + url + '_dirty', store );
+                } else {
+                    localStorage.removeItem( '' + url + '_dirty' );
+                }
                 debug.log( 'dirty model id did not exist [' + id + '] , cleared' );
             } else {
                 // if the model is new (has a backbone id) then remove the id so creates new record
                 // the local cache is cleared when the data is refreshed from server
-                debug.log( 'syncing for update', model, model.idAttribute, model.get( model.idAttribute ), isClientKey( model.get( model.idAttribute ) ), this );
+                debug.log( 'syncing for C or U', model, model.idAttribute, model.get( model.idAttribute ), isClientKey( model.get( model.idAttribute ) ), this );
                 if ( isClientKey( id ) ) {
                     // have we already got a key mapping for this id, eg created already in this batch and now updating
                     if ( typeof _keys[id] === 'undefined' ) {
@@ -226,58 +274,64 @@
                         // and remove the id so posts new
                         model.id = _keys[id];
                     }
+//                    model.url = url;
+                    model.dirtySync = true;
                 } else {
-                    // bit sure why would we get here
-                    debug.log( 'not a client key', id );
-                    model.set( (this.model.idAttribute || 'id'), _keys[id] );
+                    console.log ('updating',_i, model.id , _len);
                 }
-                model.url = url;
-                model.dirtySync = true;
+                model.urlRoot = url;
 
                 //TODO: refactor this hack to force call order or just remove this async = true line
                 // hacky approach to keeping in sync - unlikely to work as will always default to last in thread before making requests
-                // might work with callbacks
+                // might work with callbacks, if there is an id its an update
                 $.ajaxSetup( {
                     async : model.id ? true : false
                 } );
                 // model.save
                 _results.push( model.save( null,
-                    { success : _successFn,
-                        error : _errorFn,
-                        dualSync : true,
-                        remote : true,
-                        isSyncRequest: true
-                    })
+                        { success : _successFn,
+                            error : _errorFn,
+                            dualSync : true,
+                            remote : true,
+                            isSyncRequest: true
+                        })
                 );
             }
         }
         return _results;
     };
     Backbone.Collection.prototype.syncDestroyed = function () {
-        var id, ids, model, destroyList, url, _i, _len, _results, params = {},
+        var id, ids, model, destroyList, url, _i, _len, _results, param = {},
             that = this;
         url = result( this, 'url' );
-        destroyList = localStorage.getItem( '' + url + '_destroyed' );
+        var destroyList = localStorage.getItem( '' + url + '_destroyed' );
         ids = (destroyList && destroyList.split( ',' )) || [];
         _results = [];
+
+        function _removeDestroyed ( modelId ) {
+            var destroyList = localStorage.getItem( '' + url + '_destroyed' );
+            destroyList = _removeItem( destroyList, modelId );
+            // remove error producing model from dirty list
+            if ( destroyList && destroyList.length ) {
+                localStorage.setItem( '' + url + '_destroyed', destroyList );
+            } else {
+                localStorage.removeItem( '' + url + '_destroyed' );
+            }
+        }
+
         // TODO is this an AJAX success function?
         function _successFn ( model , response, options ) {
             _cleanupDirtyModel( that, model , response , options );
-            debug.log( 'del ' + model.url + '_destroyed' );
+            _removeDestroyed ( model.id );
+            debug.log( 'del ' + url + model.id );
             delete model.url;
             delete model.dirtySync;
         }
         function _errorFn ( model, xhr, options ) {
             // remove dirty if error returned from backend, if status is 0 then that means the server timed out so should try again
             if ( xhr && xhr.status ) {
-                var destroyList = localStorage.getItem( '' + url + '_destroyed' );
-                destroyList = _removeItem( destroyList , model.id );
-                // remove error producing model from dirty list
-                if (destroyList.length) {
-                    localStorage.setItem( '' + model.url + '_destroy', destroyList );
-                } else {
-                    localStorage.removeItem( '' + model.url + '_destroy' );
-                }
+                _cleanupDirtyModel( that, model , response , options );
+                _removeDestroyed ( model.id );
                 delete model.dirtySync;
                 delete model.url;
             }
@@ -286,13 +340,14 @@
             id = ids[_i];
             // remove model
             if ( this.model.prototype.idAttribute ) {
-                params[this.model.prototype.idAttribute] = id;
+                param[this.model.prototype.idAttribute] = id;
             } else {
-                params.id = id;
+                param.id = id;
             }
-            model = new this.model( params );
-            model.url = url;
-            model.collection = this;
+            // need to add a model so it can be destroyed again
+            model = this.add ( param , { validate : false, silent: true } );
+            Backbone.connectid.startedSyncing( 'delete ' + url + '/' + id);
+            model.urlRoot = url;
             _results.push( model.destroy( {
                 success : _successFn,
                 error : _errorFn
@@ -311,12 +366,10 @@
             collection = this;
         // makes a model out of an object so can be put into backbone collection
         function _modeller ( model ) {
-            if ( model instanceof Backbone.Model ) {
-                collection.models.push( model );
-            } else {
+            if ( ! (model instanceof Backbone.Model) ) {
                 model = new Model( model );
             }
-            collection.add ( model );
+            collection.add ( model , { silent: true } );
         }
         // if called before local copy loaded then do a localSync first
         if ( !this.models.length ) {
@@ -358,10 +411,12 @@
 
         Store.prototype.dirty = function ( model ) {
             var dirtyRecords;
-            dirtyRecords = this.recordsOn( this.name + '_dirty' );
-            if ( !_.include( dirtyRecords, model.id.toString() ) ) {
-                dirtyRecords.push( model.id );
-                localStorage.setItem( this.name + '_dirty', dirtyRecords.join( ',' ) );
+            if ( model && model.id) {
+                dirtyRecords = this.recordsOn( this.name + '_dirty' );
+                if ( !_.include( dirtyRecords, model.id.toString() ) ) {
+                    dirtyRecords.push( model.id );
+                    localStorage.setItem( this.name + '_dirty', dirtyRecords.join( ',' ) );
+                }
             }
             return model;
         };
@@ -451,7 +506,7 @@
             for ( _i = 0, _len = _ref.length; _i < _len; _i++ ) {
                 id = _ref[_i];
                 result = localStorage.getItem( this.name + this.sep + id );
-                debug.log ('findAll',_i,id,result);
+//              debug.log ('findAll',_i,id,result);
                 if (result) _results.push( JSON.parse( result ) );
             }
             return _results;
@@ -498,9 +553,9 @@
     localsync = function ( method, model, options ) {
         var isValidModel, preExisting, response, store;
         isValidModel = (method === 'clear') ||
-                        (method === 'hasDirtyOrDestroyed') ||
-                        model instanceof Backbone.Model ||
-                        model instanceof Backbone.Collection;
+            (method === 'hasDirtyOrDestroyed') ||
+            model instanceof Backbone.Model ||
+            model instanceof Backbone.Collection;
 
         if ( !isValidModel ) {
             throw new Error( 'model parameter is required to be a backbone model or collection.' );
@@ -614,12 +669,12 @@
     // our config is stored in the collection prototype
     dualsync = function ( method, model, options ) {
         var error, local, originalModel, success , returned , dirty, dirtyModel , hooks, _success,
-           collection = model.collection || this;
+            collection = model.collection || this;
         options = options || {};
         options.collection = collection;
 
         /*
-            this does a load of XHRs and calls a callback when xhrs are fulfilled, returns the promise.
+         this does a load of XHRs and calls a callback when xhrs are fulfilled, returns the promise.
          */
         function _doXHRs ( hooks, successFn, errorFn ) {
             if ( !hooks || !hooks.length ) {
@@ -677,12 +732,12 @@
         options.isOnline =  options.isOnline ||
             result( collection, 'isOnline' );
         if (typeof options.isOnline !== 'boolean') {
-            if (typeof options.isOnline !== 'string') {
+            if (typeof options.isOnline === 'string') {
                 options.isOnline = !(!options.isOnline || options.isOnline === 'NONE' );
-            // use html5 if available
+                // use html5 if available
             } else if  ( typeof navigator !=='undefined') {
                 options.isOnline = navigator.onLine;
-            // default to online
+                // default to online
             } else {
                 options.isOnline = true;
             }
@@ -694,11 +749,11 @@
         // dual syncing only happens when online, can be passed as am option or on collection
         options.dualSync = options.isOnline &&
             ( options.dualSync  ||
-            result( collection, 'dualSync' ) ||
-            result( collection, 'remote' ) && result( collection, 'local' ) );
+                result( collection, 'dualSync' ) ||
+                result( collection, 'remote' ) && result( collection, 'local' ) );
         // if not got local results then defaults to remote sync regardless of returns - this is to force
         // fetch and wait on first init
-        if ( options.remote && !options.store.records.length ) {
+        if ( options.returns || options.remote && !options.store.records.length ) {
             options.returns = 'remote';
         } else {
             options.returns = options.returns ||
@@ -715,7 +770,7 @@
             // if there is no local copy then always tries remote, regardless off isOnline - this is default BackBone behaviour
             if ( !options.fetchLocal &&
                 ( options.isOnline &&
-                   options.remote ) ) {
+                    options.remote ) ) {
                 // todo: do we need to save local copy if local is set?
                 return onlineSync( method, model, options );
             } else {
@@ -740,10 +795,10 @@
                 // is this an action on a dirty model if so we can update and call sync
                 dirtyModel = !model.id || isClientKey( model.id );
                 if ( dirtyModel) {
-                    // set dirty or it will be cleaned from the dirty list and not synced
-                    returned = localsync( method, model, _.extend ( options, { dirty: (method !=='delete') } ) );
+                    // set dirty or it will be cleaned from the dirty list and not synced - TODO: WHAT IS THIS?
+                    returned = localsync( method, model, _.extend ( options, { dirty: false && (method !=='delete' ) } ) );
                 }
-                debug.log ('calling syncDirty');
+                console.log ('calling syncDirty');
                 hooks = collection.syncDirtyAndDestroyed();
             }
             switch ( method ) {
@@ -803,6 +858,7 @@
                     if ( options.isSyncRequest ) {
                         // tidy up id before remote call on dirty records - see sync dirty, has to be done here so collection has a key in it should request fail
                         delete model.id;
+                        model.unset( model.idAttribute );
                     } else if ( dirtyModel ) {
                         $.when.apply( $, hooks ).then( function () {
                             Backbone.connectid.stoppedSyncing( 'Create Sync Resolved' );
@@ -830,8 +886,8 @@
                             } else if ( typeof error === 'function' ) {
                                 debug.log( 'create error', resp );
                                 // remove record from local collection to keep in sync
-                                model.destroy( {  local : true, remote : false, dualSync : false} );
-                                collection.remove( model, { local : true, remote : false, dualSync : false} );
+                                model.destroy( {  local : true, remote : false, dualSync : false, silent: true } );
+                                collection.remove( model, { local : true, remote : false, dualSync : false, silent: true } );
                                 delete model.dirtySync;
                                 // have changed this as looks like the args were wrong
                                 //                            return error( model, resp , options );
@@ -860,21 +916,23 @@
                         // if its a local key then need to keep things in sync
                         model.originalModel = model.clone();
                         options.success = function ( resp, status, xhr ) {
-                            //TODO: NOT CONVINCED ABOUT SCOPE ON THIS IF SYNCING IS OCCURING
                             var updatedModel;
                             updatedModel = modelUpdatedWithResponse( model, resp );
                             localsync( 'delete', model.originalModel, options );
                             localsync( 'create', updatedModel, options );
+                            // the dirty version is deleted on sync success callback so we need to add the clean version here
+                            // this could be annoying as it means add and remove instead of change event being fired
+                            collection.add( updatedModel , { silent: true } );
                             return success( resp, status, xhr );
                         };
                         options.error = function ( resp , xhr, options) {
                             options = options || {};
                             options.dirty = true;
                             if ( resp && resp.status) debug.log('update error',resp);
-//                            return success( localsync( method, originalModel, options ) );
                             return error ( resp, xhr, options );
                         };
-//                        model.unset('id');
+                        delete model.id;
+                        model.unset( model.idAttribute );
                         return _doXHRs (  hooks,
                             function () {  return onlineSync( 'create', model , options ); },
                             function (resp) {  return options.error(resp); }
@@ -883,6 +941,7 @@
                         options.success = function ( resp, status, xhr ) {
                             var updatedModel;
                             updatedModel = modelUpdatedWithResponse( model, resp );
+                            console.log ('updated Model cb', updatedModel);
                             localsync( method, updatedModel, options );
                             return success( resp, status, xhr );
                         };
