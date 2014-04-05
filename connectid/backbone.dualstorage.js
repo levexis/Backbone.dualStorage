@@ -12,7 +12,6 @@
 
  not isOnline can be passed a function for use with native html5 apps, eg phonegap.
  */
-// todo: poll $.active for _isSyncing in case its stuck
 /*jslint plusplus: true */
 (function () {
     "use strict";
@@ -57,15 +56,17 @@
             debug.log( 'stopped syncing', _isSyncing, msg , success);
             if ( _isSyncing === true ) {
                 _isSyncing = false;
-                $.ajaxSetup( { async : true  } );
                 if ( success ) {
+                    $.ajaxSetup( { async: true} );
                     _deferred.resolve();
                 } else {
+                    $.ajaxSetup( { async: true} );
                     _deferred.reject();
                 }
             }
         },
         startedSyncing : function ( msg ) {
+            $.ajaxSetup( { async: false} );
             debug.log( 'started syncing', _isSyncing, msg );
             _lastActive = new Date();
             // reset the keys as should have all been used by now
@@ -183,8 +184,6 @@
 //                        debug.log( 'mapping', model.jerryHallId, 'to', newKey );
                 _keys[ model.jerryHallId ] = newKey ;
                 delete model.jerryHallId;
-                // re-enable async if disabled
-                $.ajaxSetup( { async : true } );
             }
             console.log ('synced',model.id,localStorage.getItem(model.url + '_dirty') );
             // cleaning up
@@ -277,23 +276,20 @@
 //                    model.url = url;
                     model.dirtySync = true;
                 } else {
-                    console.log ('updating',_i, model.id , _len);
+                    debug.log ('updating',_i, model.id , _len);
                 }
                 model.urlRoot = url;
 
                 //TODO: refactor this hack to force call order or just remove this async = true line
-                // hacky approach to keeping in sync - unlikely to work as will always default to last in thread before making requests
-                // might work with callbacks, if there is an id its an update
-                $.ajaxSetup( {
-                    async : model.id ? true : false
-                } );
+                //as this can freeze the UI, should just use promises to chain async requests together
                 // model.save
                 _results.push( model.save( null,
                         { success : _successFn,
                             error : _errorFn,
                             dualSync : true,
                             remote : true,
-                            isSyncRequest: true
+                            isSyncRequest: true,
+                            async : false
                         })
                 );
             }
@@ -311,6 +307,7 @@
         function _removeDestroyed ( modelId ) {
             var destroyList = localStorage.getItem( '' + url + '_destroyed' );
             destroyList = _removeItem( destroyList, modelId );
+            debug.show ('removing',modelId,destroyList)
             // remove error producing model from dirty list
             if ( destroyList && destroyList.length ) {
                 localStorage.setItem( '' + url + '_destroyed', destroyList );
@@ -321,21 +318,23 @@
 
         // TODO is this an AJAX success function?
         function _successFn ( model , response, options ) {
+            debug.log( 'success deleted ' + url, model);
             _cleanupDirtyModel( that, model , response , options );
             _removeDestroyed ( model.id );
-            debug.log( 'del ' + url + model.id );
             delete model.url;
             delete model.dirtySync;
         }
         function _errorFn ( model, xhr, options ) {
             // remove dirty if error returned from backend, if status is 0 then that means the server timed out so should try again
             if ( xhr && xhr.status ) {
+                debug.log( 'error deleting ' + url , xhr );
                 _cleanupDirtyModel( that, model , response , options );
                 _removeDestroyed ( model.id );
                 delete model.dirtySync;
                 delete model.url;
             }
         }
+        console.log ('destr store', Backbone.connectid.isSyncing(), url,ids  );
         for ( _i = 0, _len = ids.length; _i < _len; _i++ ) {
             id = ids[_i];
             // remove model
@@ -345,12 +344,13 @@
                 param.id = id;
             }
             // need to add a model so it can be destroyed again
-            model = this.add ( param , { validate : false, silent: true } );
+            model = this.add ( param , { validate : false /*,silent: true* is this stopping models getting deleted*/ } );
             Backbone.connectid.startedSyncing( 'delete ' + url + '/' + id);
             model.urlRoot = url;
             _results.push( model.destroy( {
                 success : _successFn,
-                error : _errorFn
+                error : _errorFn,
+                async: false
             } ) );
         }
 //  see note above, we want to ensure that whilst in process of syncing we see old data until updates have completed    
@@ -763,7 +763,7 @@
 
         if ( typeof options.isOnline === 'function' ) options.isOnline = options.isOnline();
 
-        debug.log('dualSync', Backbone.connectid.isSyncing() , method, options );
+        debug.log('dualSync', !!Backbone.connectid.isSyncing() , method,  model, options );
 
         // single sync, simple mode
         if ( options.fetchLocal || !options.isOnline || !options.dualSync ) {
@@ -798,7 +798,7 @@
                     // set dirty or it will be cleaned from the dirty list and not synced - TODO: WHAT IS THIS?
                     returned = localsync( method, model, _.extend ( options, { dirty: false && (method !=='delete' ) } ) );
                 }
-                console.log ('calling syncDirty');
+                debug.log ('calling syncDirty');
                 hooks = collection.syncDirtyAndDestroyed();
             }
             switch ( method ) {
@@ -941,7 +941,7 @@
                         options.success = function ( resp, status, xhr ) {
                             var updatedModel;
                             updatedModel = modelUpdatedWithResponse( model, resp );
-                            console.log ('updated Model cb', updatedModel);
+                            debug.log ('updated Model suc cb', updatedModel);
                             localsync( method, updatedModel, options );
                             return success( resp, status, xhr );
                         };
@@ -950,8 +950,9 @@
                             if ( resp && resp.status) debug.log('update error',resp);
                             return success( localsync( method, model, options ) );
                         };
+                        debug.log('update doXHRs', method, model, options);
                         return _doXHRs (  hooks,
-                            function () {  return onlineSync( method, model , options ); },
+                            function () {  debug.log('update onCB', method, model, options); return onlineSync( method, model , options ); },
                             function (resp) {  return options.error(resp); }
                         );
                     }
@@ -964,6 +965,7 @@
                         return localsync( method, model, options );
                     } else {
                         options.success = function ( resp, status, xhr ) {
+                            debug.log ('deleted Model suc cb', model, resp);
                             localsync( method, model, options );
                             return success( model, resp , options );
                         };
@@ -973,7 +975,7 @@
                             return success( localsync( method, model, options ) );
                         };
                         return _doXHRs (  hooks,
-                            function () {  return onlineSync( method, model , options ); },
+                            function () {  debug.log('delete onCB', method, model, options); return onlineSync( method, model , options ); },
                             function (resp) {  return options.error(resp); }
                         );
                     }
