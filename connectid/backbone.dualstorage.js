@@ -8,7 +8,7 @@
  remote = fetch remote - remote only ( default behaviour, ignores local cache if dualSync is false
  local = fetch local - local only if remote and dualSync disabled
  returns =  default is remote if remote and online and no dirty data otherwise local
- isOnline = defaults to navigator.onLine but who the fuck capitalizes the L in online! Doesn't try to make requests, does same as if error 0
+ isOnline = defaults to navigator.onLine but who capitalizes the L in online! Doesn't try to make requests, does same as if error 0
 
  not isOnline can be passed a function for use with native html5 apps, eg phonegap.
  */
