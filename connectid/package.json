@@ -13,7 +13,8 @@
     "node": "0.10.22"
   },
   "scripts": {
-    "start": "app.js"
+    "start": "app.js",
+    "test": "./node_modules/karma/bin/karma start"
   },
   "dependencies": {
     "express": "latest"
@@ -30,6 +31,7 @@
     "karma-firefox-launcher": "latest",
     "karma-safari-launcher": "latest",
     "karma-ie-launcher": "latest",
+    "karma-phantomjs-launcher": "latest",
     "karma-htmlfile-reporter": "~0.1.0"
   }
 }

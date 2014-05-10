@@ -19,15 +19,16 @@ module.exports = function(config) {
         // list of files to exclude
         exclude: [
             'public/js/main.js',
-            'test/report.html'
+            'test/*.html'
         ],
 
         // test results reporter to use
         // possible values: 'dots', 'progress', 'junit', 'growl', 'coverage'
         reporters: ['progress', 'dots' ,'html' , 'coverage'], // need to install spec using
 
+        // generate coverage report
         preprocessors: {
-            "./backbone.dualstorage.js": "coverage"
+            './backbone.dualstorage.js': 'coverage'
         },
 
         htmlReporter: {
@@ -50,7 +51,7 @@ module.exports = function(config) {
 
         // level of logging
         // possible values: config.LOG_DISABLE || config.LOG_ERROR || config.LOG_WARN || config.LOG_INFO || config.LOG_DEBUG
-        logLevel: config.LOG_ERROR,
+        logLevel: config.LOG_DEBUG,
 
         // enable / disable watching file and executing tests whenever any file changes
         autoWatch:false,
@@ -63,29 +64,26 @@ module.exports = function(config) {
         // - Safari (only Mac)
         // - PhantomJS
         // - IE (only Windows)
-        browsers: ['Chrome'  ],
+        browsers: ['PhantomJS'  ],
 
         // If browser does not capture in given timeout [ms], kill it
         captureTimeout: 60000,
 
-        // Continuous Integration mode
+        // Continuous Integration mode - set to false to run on code change
         // if true, it capture browsers, run tests and exit
-        singleRun: false,
+        singleRun: true,
 
-        preprocessors : {
-        //    '**/client/js/*.js': 'coverage'
-    },
-
-    plugins: [
-        "karma-mocha",
-        "karma-requirejs",
-        "karma-sinon-chai",
-        "karma-chai-backbone",
+        plugins: [
+        'karma-mocha',
+        'karma-requirejs',
+        'karma-sinon-chai',
+        'karma-chai-backbone',
         'karma-chrome-launcher',
         'karma-firefox-launcher',
         'karma-safari-launcher',
+        'karma-phantomjs-launcher',
         'karma-ie-launcher',
-        'karma-htmlfile-reporter'
-    ]
-    });
+        'karma-htmlfile-reporter',
+        'karma-coverage'
+    ]});
 };
