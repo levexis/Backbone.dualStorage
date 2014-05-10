@@ -19,7 +19,7 @@
     "express": "latest"
   },
   "devDependencies": {
-    "karma": "0.10.0",
+    "karma": "0.10.1",
     "karma-coverage" : "latest",
     "karma-mocha": "latest",
     "karma-requirejs": "latest",
