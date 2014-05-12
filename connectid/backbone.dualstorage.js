@@ -148,10 +148,10 @@
             // remove key from dirty list
             // delete dirty (temp) version and update keys array to value from backend
             //old model
-            jerryHall = collection.get( model.jerryHallId );
+            jerryHall = collection.find ( function ( doc ) { return doc.jerryHallId && doc.jerryHallId === model.jerryHallId && doc.id !== newKey;  });
             if ( jerryHall) {
-                console.log('destroying', model.jerryHallId , response, options);
-                jerryHall.destroy({  local: true, remote: false, dualSync: false} );
+                debug.log('destroying', model.jerryHallId , response, options);
+                jerryHall.destroy({  local: true, remote: false, dualSync: false, cleanDirty: true } ); // new models have destroy overridden for offline create and delete, cleanDirty disables this
                 collection.remove( jerryHall , { local: true, remote: false, dualSync: false , silent:true }  );
             } else {
                 // remove url manually from local storage
@@ -167,13 +167,12 @@
 
 // TODO: Could be smarter by grouping posts in first batch and then doing updates once post has resolved
     Backbone.Collection.prototype.syncDirty = function () {
-        var id, ids, model, store, url, _i, _len, _results, _successFn, _errorFn,
+        var id, ids, model, store, url, _i, _len, _results, _successFn, _errorFn, _destroyFn,
             that = this;
         /* TODO is this an AJAX success and not a backbone success function in which case it may be function( resp , xhr, options ) {
-         if so we'll need to straighten a load of stuff back out - i think its only called internall by localsync on success which
+         if so we'll need to straighten a load of stuff back out - i think its only called internally by localsync on success which
          handles the ajax and updates the model, otherwise we can put the model and collection in scope*/
         _successFn = function ( model, response , options ) {
-            console.log ('sync success', response);
             var newKey;
             // need to refresh store as scope create when original request was made
             options.store = new Store ( options.store.name );
@@ -181,7 +180,7 @@
             // we can now swap this out from its stub value to the one id created remotely
             newKey = _cleanupDirtyModel ( that , model , response , options );
             if ( newKey ) {
-//                        debug.log( 'mapping', model.jerryHallId, 'to', newKey );
+//              debug.log( 'mapping', model.jerryHallId, 'to', newKey );
                 _keys[ model.jerryHallId ] = newKey ;
                 delete model.jerryHallId;
             }
@@ -233,7 +232,23 @@
             delete model.dirtySync;
             delete model.jerryHallId;
         };
-
+        // allows new models to be immediately destroyed on sync if !cleanDirty
+        _destroyFn = function ( model , url , id ) {
+            var _oldDestroy = model.destroy;
+            return function ( options ) {
+                if ( typeof options !== 'object' || !options.cleanDirty) {
+                    // we have to manually do this because won't exist in local store
+                    // the _keys mapping will be used to remove new
+                    var destroyList = localStorage.getItem( '' + url + '_destroyed' ) || '';
+                    // will use keys table to delete offending model
+                    console.log( 'deferred destroy', this.get( 'name' ), url, id );
+                    if (destroyList) destroyList +=',';
+                    destroyList += id;
+                    localStorage.setItem( '' + url + '_destroyed' , destroyList );
+                }
+                _oldDestroy.apply( this, arguments );
+            }
+        };
         url = result( this, 'url' );
         store = localStorage.getItem( '' + url + '_dirty' );
         ids = (store && store.split( ',' )) || [];
@@ -275,6 +290,8 @@
                     }
 //                    model.url = url;
                     model.dirtySync = true;
+                    // enable immediate delete before syncing otherwise backbone will ignore as no id set
+                    model.destroy = _destroyFn ( model, url , id );
                 } else {
                     debug.log ('updating',_i, model.id , _len);
                 }
@@ -307,7 +324,7 @@
         function _removeDestroyed ( modelId ) {
             var destroyList = localStorage.getItem( '' + url + '_destroyed' );
             destroyList = _removeItem( destroyList, modelId );
-            debug.show ('removing',modelId,destroyList)
+            debug.log ('removing', modelId , destroyList )
             // remove error producing model from dirty list
             if ( destroyList && destroyList.length ) {
                 localStorage.setItem( '' + url + '_destroyed', destroyList );
@@ -320,7 +337,9 @@
         function _successFn ( model , response, options ) {
             debug.log( 'success deleted ' + url, model);
             _cleanupDirtyModel( that, model , response , options );
-            _removeDestroyed ( model.id );
+            _removeDestroyed ( model.destroyId || id );
+            // if this not superfluos if model has been destroyed?
+            delete model.destroyId;
             delete model.url;
             delete model.dirtySync;
         }
@@ -337,20 +356,31 @@
         console.log ('destr store', Backbone.connectid.isSyncing(), url,ids  );
         for ( _i = 0, _len = ids.length; _i < _len; _i++ ) {
             id = ids[_i];
+            // check its not a remapped client key, from a create and delete offline
+            id = _keys[id] || id;
+            Backbone.connectid.startedSyncing( url + '/' + id);
             // remove model
             if ( this.model.prototype.idAttribute ) {
                 param[this.model.prototype.idAttribute] = id;
             } else {
                 param.id = id;
             }
-            // need to add a model so it can be destroyed again
-            model = this.add ( param , { validate : false /*,silent: true* is this stopping models getting deleted*/ } );
+            // need to add a model so it can be destroyed again unless this is an immediate destroy
+            model = this.get('id');
+            if ( !model ) {
+                model = this.add( param, { validate : false /*,silent: true* is this stopping models getting deleted*/ } );
+                model.urlRoot = url;
+            }
+            model.destroyId = ids[_i];
+
             Backbone.connectid.startedSyncing( 'delete ' + url + '/' + id);
-            model.urlRoot = url;
             _results.push( model.destroy( {
                 success : _successFn,
                 error : _errorFn,
-                async: false
+                dualSync : true,
+                remote : true,
+                isSyncRequest: true,
+                async : true
             } ) );
         }
 //  see note above, we want to ensure that whilst in process of syncing we see old data until updates have completed    
@@ -469,11 +499,16 @@
         };
 
         Store.prototype.update = function ( model ) {
-            localStorage.setItem( this.name + this.sep + model.id, JSON.stringify( model ) );
-            if ( !_.include( this.records, model.id.toString() ) ) {
-                this.records.push( model.id.toString() );
+            var id = model.id;
+            if ( id ) {
+                // convert to string
+                id += '';
+                localStorage.setItem( this.name + this.sep + id, JSON.stringify( model ) );
+                if ( !_.include( this.records ) ) {
+                    this.records.push( id );
+                }
+                this.save();
             }
-            this.save();
             return model;
         };
 
@@ -513,10 +548,11 @@
         };
 
         Store.prototype.destroy = function ( model ) {
-            if (model.id) {
-                localStorage.removeItem( this.name + this.sep + model.id );
+            var id = model.id || model.get ( model.idAttribute || 'id' );
+            if (id) {
+                localStorage.removeItem( this.name + this.sep + id );
                 this.records = _.reject( this.records, function ( recordId ) {
-                    return recordId === model.id.toString();
+                    return recordId === id.toString();
                 } );
                 this.save();
             }
@@ -566,7 +602,7 @@
             switch ( method ) {
                 case 'read':
                     if ( model.id ) {
-                        return store.find( );
+                        return store.find();
                     } else {
                         return store.findAll();
                     }
@@ -599,7 +635,7 @@
                     if ( options.dirty ) {
                         return store.destroyed( model );
                     } else {
-                        if ( isClientKey( model.id.toString() ) ) {
+                        if ( isClientKey( model.id ) ) {
                             return store.clean( model, 'dirty' );
                         } else {
                             return store.clean( model, 'destroyed' );
@@ -796,7 +832,7 @@
                 dirtyModel = !model.id || isClientKey( model.id );
                 if ( dirtyModel) {
                     // set dirty or it will be cleaned from the dirty list and not synced - TODO: WHAT IS THIS?
-                    returned = localsync( method, model, _.extend ( options, { dirty: false && (method !=='delete' ) } ) );
+                    returned = localsync( method, model, _.extend ( options, { dirty: true && (method !=='delete' ) } ) );
                 }
                 debug.log ('calling syncDirty');
                 hooks = collection.syncDirtyAndDestroyed();
@@ -859,6 +895,12 @@
                         // tidy up id before remote call on dirty records - see sync dirty, has to be done here so collection has a key in it should request fail
                         delete model.id;
                         model.unset( model.idAttribute );
+                    // if a dirty model is updated during a sync it's original id will be missing. The workaround is to put back the id and save a dirty version
+                    } else if ( Backbone.connectid.isSyncing() && model.jerryHallId) {
+                        dirtyModel = model.clone();
+                        dirtyModel.set(model.idAttribute || 'id' , model.jerryHallId.toString() );
+                        delete dirtyModel.jerryHallId;
+                        return success ( localsync ('update',dirtyModel,{ dirty: true , storeName : options.storeName, ignoreCallbacks: true } ) );
                     } else if ( dirtyModel ) {
                         $.when.apply( $, hooks ).then( function () {
                             Backbone.connectid.stoppedSyncing( 'Create Sync Resolved' );
@@ -912,6 +954,7 @@
                             Backbone.connectid.stoppedSyncing( 'Update Sync Resolved' );
                         } );
                         return success( returned );
+                    // this condition is where the update is being done on a record currently being created
                     } else if ( isClientKey ( model.id ) ) {
                         // if its a local key then need to keep things in sync
                         model.originalModel = model.clone();
@@ -922,13 +965,18 @@
                             localsync( 'create', updatedModel, options );
                             // the dirty version is deleted on sync success callback so we need to add the clean version here
                             // this could be annoying as it means add and remove instead of change event being fired
-                            collection.add( updatedModel , { silent: true } );
+//                            if ( !collection.get ( updatedModel ) ) {
+//                                collection.add( updatedModel, { silent : true } );
+//                            }
                             return success( resp, status, xhr );
                         };
                         options.error = function ( resp , xhr, options) {
                             options = options || {};
+                            // put the id back so can be manipulated
                             options.dirty = true;
+                            model.set ( 'id' , model.id || model.jerryHallId );
                             if ( resp && resp.status) debug.log('update error',resp);
+                            delete model.jerryHallId;
                             return error ( resp, xhr, options );
                         };
                         delete model.id;
@@ -948,7 +996,8 @@
                         options.error = function ( resp ) {
                             options.dirty = true;
                             if ( resp && resp.status) debug.log('update error',resp);
-                            return success( localsync( method, model, options ) );
+//                            return success( localsync( method, model, options ) );
+                            return error ( resp, xhr, options );
                         };
                         debug.log('update doXHRs', method, model, options);
                         return _doXHRs (  hooks,
@@ -961,11 +1010,12 @@
                     // if deleted a local model then job done
                     if ( dirtyModel) {
                         return success (returned);
+                    // else this is a delete of a local model but we are currently syncing
                     } else if ( isClientKey ( model.id ) ) {
                         return localsync( method, model, options );
                     } else {
                         options.success = function ( resp, status, xhr ) {
-                            debug.log ('deleted Model suc cb', model, resp);
+                            debug.log ('deleted Model suc cb', model.id, method, model, resp);
                             localsync( method, model, options );
                             return success( model, resp , options );
                         };

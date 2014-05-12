@@ -557,7 +557,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     coll.toJSON().forEach ( checkDirty );
                     _dirtyCount.should.equal(0);
                 });
-                it.only('should not lose or duplicate records from queue if connectivity fails', function( done ) {
+                it('should not lose or duplicate records from queue if connectivity fails', function( done ) {
                     var _dirtyCount = 0;
                     function checkDirty ( doc ) {
                         if ( isDirty( doc ) ) {
@@ -647,17 +647,17 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                         }
                     }
                     // dirty
-                    modelE.set( { name: 'Barry' } );
+                    modelE.set( 'name', 'Barry' );
                     modelE.save();
                     console.log ( 'debug 1');
                     for ( var i=0 ; i< $.ajax.callCount ; i++ ) {
                         console.log( $.ajax.args[i] );
                     }
                     // clean
-                    modelA.set( { name: 'Zoe' } );
+                    modelA.set( 'name' , 'Zoe' );
                     modelA.save();
                     //dirty
-                    modelD.set( { name: 'Andy' } );
+                    modelD.set( 'name',  'Andy' );
                     modelD.save();
                     // should have updated Eric to Barry and then synced Dan, Barry, Fred
                     $.ajax.should.have.been.calledThrice;
@@ -666,16 +666,15 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     // now sync dirty
                     $.ajax.getCall(0).args[0].success( {_id : dList[0]._id });
                     $.ajax.getCall(1).args[0].success( {_id : dList[1]._id });
-//                    $.ajax.getCall(2).args[0].success( {_id : dList[2]._id });
+                    $.ajax.getCall(2).args[0].success( {_id : dList[2]._id });
                     // then it should
                     promises.forEach ( _resolvePromise );
                     for ( var i=0 ; i< $.ajax.callCount ; i++ ) {
                         console.log( $.ajax.args[i] );
                     }
-//                    $.ajax.callCount.should.equal(4);
+                    $.ajax.callCount.should.equal(4);
                     $.ajax.getCall(3).args[0].success(  {_id : dList[1]._id });
-//                    $.ajax.getCall(3 ).args[0].type.should.equal ('PUT');
-//                    $.ajax.getCall(4 ).args[0].success();
+                    $.ajax.getCall(3 ).args[0].type.should.equal ('PUT');
                     coll.toJSON()[5].name.should.equal( 'Zoe' );
                     coll.toJSON()[0].name.should.equal( 'Andy' );
                     _dirtyCount = 0;
