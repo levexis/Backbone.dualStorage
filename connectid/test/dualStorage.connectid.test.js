@@ -19,7 +19,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
      * @returns {boolean} true if a local record not yet synced
      */
     function isDirty ( doc ) {
-        return isClientKey ( doc._id );
+        return !doc._id || isClientKey ( doc._id );
     }
     var expect = chai.expect,
         should = chai.should(),
@@ -557,7 +557,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     coll.toJSON().forEach ( checkDirty );
                     _dirtyCount.should.equal(0);
                 });
-                it('should not lose or duplicate records from queue if connectivity fails', function( done ) {
+                it.only('should not lose or duplicate records from queue if connectivity fails', function( done ) {
                     var _dirtyCount = 0;
                     function checkDirty ( doc ) {
                         if ( isDirty( doc ) ) {
@@ -575,10 +575,14 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     coll.toJSON().forEach ( checkDirty );
                     _dirtyCount.should.equal(2);
                     coll.length.should.equal(6);
+                    // should now sync successfully
                     coll.syncDirtyAndDestroyed();
-                    $.ajax.getCall(3).args[0].success();
-                    $.ajax.getCall(4).args[0].success();
+                    $.ajax.getCall(3).args[0].success( dList[1] );
+                    $.ajax.getCall(4).args[0].success( dList[2] );
                     coll.length.should.equal(6);
+                    _dirtyCount = 0;
+                    coll.toJSON().forEach ( checkDirty );
+                    _dirtyCount.should.equal(0);
                     expect ( window.localStorage.getItem('sync error' ) ).to.not.exist;
                     done();
                 });
@@ -604,7 +608,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                         }
                     };
                     modelA.destroy();
-                    coll.length.should.equal( 5 );
+                    coll.length.should.equal( 5 )
                     modelD.destroy();
                     coll.length.should.equal( 4 );
                     modelB.destroy();
@@ -615,13 +619,18 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     $.ajax.getCall(2).args[0].success( dList[2] );
                     promises.forEach ( _resolvePromise );
                     $.ajax.callCount.should.equal(5);
+                    coll.syncDestroyed(); // this should be automated after syncing for immediate deletes?
                     coll.length.should.equal( 3 );
+                    $.ajax.callCount.should.equal( 6 );
                     $.ajax.getCall(3 ).args[0].success();
                     $.ajax.getCall(4 ).args[0].success();
+                    $.ajax.getCall(5 ).args[0].success();
                     coll.length.should.equal( 3 );
                     coll.fetch();
                     coll.toJSON().forEach ( checkDirty );
                     _dirtyCount.should.equal(0);
+                    // check local storage in sync
+                    localStorage.length.should.equal(4);
                     done();
                 });
                 it('should update and return sorted updated records and update after sync', function(done) {
@@ -640,6 +649,10 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     // dirty
                     modelE.set( { name: 'Barry' } );
                     modelE.save();
+                    console.log ( 'debug 1');
+                    for ( var i=0 ; i< $.ajax.callCount ; i++ ) {
+                        console.log( $.ajax.args[i] );
+                    }
                     // clean
                     modelA.set( { name: 'Zoe' } );
                     modelA.save();
@@ -647,7 +660,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     modelD.set( { name: 'Andy' } );
                     modelD.save();
                     // should have updated Eric to Barry and then synced Dan, Barry, Fred
-//                    $.ajax.should.have.been.calledThrice;
+                    $.ajax.should.have.been.calledThrice;
                     coll.length.should.equal( 6 );
                     coll.toJSON()[5].name.should.equal( 'Zoe' );
                     // now sync dirty
@@ -656,8 +669,11 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
 //                    $.ajax.getCall(2).args[0].success( {_id : dList[2]._id });
                     // then it should
                     promises.forEach ( _resolvePromise );
-                    $.ajax.callCount.should.equal(4);
-                    $.ajax.getCall(3 ).args[0].success();
+                    for ( var i=0 ; i< $.ajax.callCount ; i++ ) {
+                        console.log( $.ajax.args[i] );
+                    }
+//                    $.ajax.callCount.should.equal(4);
+                    $.ajax.getCall(3).args[0].success(  {_id : dList[1]._id });
 //                    $.ajax.getCall(3 ).args[0].type.should.equal ('PUT');
 //                    $.ajax.getCall(4 ).args[0].success();
                     coll.toJSON()[5].name.should.equal( 'Zoe' );
