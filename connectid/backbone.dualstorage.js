@@ -295,7 +295,8 @@
                 } else {
                     debug.log ('updating',_i, model.id , _len);
                 }
-                model.urlRoot = url;
+                //not needed as is specified in collection
+                //model.urlRoot = url;
 
                 //TODO: refactor this hack to force call order or just remove this async = true line
                 //as this can freeze the UI, should just use promises to chain async requests together
