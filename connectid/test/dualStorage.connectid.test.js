@@ -359,7 +359,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     promises = [];
                     $.ajax.reset();
                     coll.isOnline = true;
-                    console.log ( 'READY' );
                     done();
                 });
                 afterEach ( function( done ) {
@@ -649,10 +648,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     // dirty
                     modelE.set( 'name', 'Barry' );
                     modelE.save();
-                    console.log ( 'debug 1');
-                    for ( var i=0 ; i< $.ajax.callCount ; i++ ) {
-                        console.log( $.ajax.args[i] );
-                    }
                     // clean
                     modelA.set( 'name' , 'Zoe' );
                     modelA.save();
@@ -669,9 +664,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     $.ajax.getCall(2).args[0].success( {_id : dList[2]._id });
                     // then it should
                     promises.forEach ( _resolvePromise );
-                    for ( var i=0 ; i< $.ajax.callCount ; i++ ) {
-                        console.log( $.ajax.args[i] );
-                    }
                     $.ajax.callCount.should.equal(4);
                     $.ajax.getCall(3).args[0].success(  {_id : dList[1]._id });
                     $.ajax.getCall(3 ).args[0].type.should.equal ('PUT');
@@ -780,7 +772,6 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 _createDoc ( gList[0] );
                 _createDoc ( gList[1] );
                 // should now have 5 dirty records 3 of which are syncing
-                console.log(window.localStorage);
             });
             it('should do requests asynchronously so app can continue to be used working with offline data'); // can only do this with an e2e test to check UI is responsive
             it('should wait for syncing to complete before executing next remote fetch', function () {
