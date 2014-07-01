@@ -244,7 +244,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 sinon.stub( $ , 'ajax');
             });
             afterEach ( function() {
-                Backbone.connectid.stoppedSyncing();
+                Backbone.mobileStorage.stoppedSyncing();
                 $.ajax.restore();
             });
             describe('when online' , function() {
@@ -363,7 +363,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                 });
                 afterEach ( function( done ) {
                     $.ajax.restore();
-                    Backbone.connectid.stoppedSyncing();
+                    Backbone.mobileStorage.stoppedSyncing();
                     done();
                 });
                 it('should sync dirty records after next read online', function (done) {
@@ -461,7 +461,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     $.ajax.getCall(1).args[0].success();
                     $.ajax.getCall(2).args[0].success();
                     promises.forEach ( _resolvePromise );
-                    Backbone.connectid.isSyncing().should.be.false;
+                    Backbone.mobileStorage.isSyncing().should.be.false;
                     $.ajax.getCall(3).args[0].success( remote );
                     // should now return clean
                     _dirtyCount = 0;
@@ -486,7 +486,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     // return dirty
                     result = coll.toJSON();
                     result.forEach ( checkDirty );
-                    Backbone.connectid.isSyncing().should.be.ok;
+                    Backbone.mobileStorage.isSyncing().should.be.ok;
                     $.ajax.callCount.should.equal( 3 );
                     $.ajax.getCall(0).args[0].success( dList[0] );
                     $.ajax.getCall(1).args[0].success( dList[1] );
@@ -521,7 +521,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
                     // return dirty
                     result = coll.toJSON();
                     result.forEach ( checkDirty );
-                    Backbone.connectid.isSyncing().should.be.ok;
+                    Backbone.mobileStorage.isSyncing().should.be.ok;
                     $.ajax.callCount.should.equal( 3 );
                     $.ajax.getCall(0).args[0].success( dList[0] );
                     $.ajax.getCall(1).args[0].success( dList[1] );
@@ -750,7 +750,7 @@ define( [ 'dualStorage' , 'jquery' , 'underscore' ] ,  function ( Backbone , $ ,
             });
             afterEach ( function() {
                 $.ajax.restore();
-                Backbone.connectid.stoppedSyncing();
+                Backbone.mobileStorage.stoppedSyncing();
             });
             it('should support direct call to syncDirtyAndDestroyed', function () {
                 coll.syncDirtyAndDestroyed();

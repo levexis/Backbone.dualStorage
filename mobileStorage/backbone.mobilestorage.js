@@ -41,7 +41,7 @@
         _lastActive,
         TIMEOUT = 10000;
 
-    Backbone.connectid = {
+    Backbone.mobileStorage = {
         // returns a promise or false
         isSyncing : function () {
             // check for active ajax requests to prevent getting stuck
@@ -228,7 +228,7 @@
                 }
                 _isRefreshing = true;
             } else {
-                Backbone.connectid.stoppedSyncing( 'sync ajax timeout' );
+                Backbone.mobileStorage.stoppedSyncing( 'sync ajax timeout' );
             }
             delete model.url;
             delete model.dirtySync;
@@ -256,7 +256,7 @@
         _results = [];
         for ( _i = 0, _len = ids.length; _i < _len; _i++ ) {
             id = ids[_i];
-            Backbone.connectid.startedSyncing( this.url + '/' + id);
+            Backbone.mobileStorage.startedSyncing( this.url + '/' + id);
             model = this.get( id );
             if ( !model ) {
                 store = _removeItem (store, id  );
@@ -338,7 +338,7 @@
             id = ids[_i];
             // check its not a remapped client key, from a create and delete offline
             id = _keys[id] || id;
-            Backbone.connectid.startedSyncing( url + '/' + id);
+            Backbone.mobileStorage.startedSyncing( url + '/' + id);
             // remove model
             if ( this.model.prototype.idAttribute ) {
                 param[this.model.prototype.idAttribute] = id;
@@ -353,7 +353,7 @@
             }
             model.destroyId = ids[_i];
 
-            Backbone.connectid.startedSyncing( 'delete ' + url + '/' + id);
+            Backbone.mobileStorage.startedSyncing( 'delete ' + url + '/' + id);
             _results.push( model.destroy( {
                 success : _successFn,
                 error : _errorFn,
@@ -689,7 +689,7 @@
          */
         function _doXHRs ( hooks, successFn, errorFn ) {
             if ( !hooks || !hooks.length ) {
-                var _syncingFeeling = !options.isSyncRequest && Backbone.connectid.isSyncing();
+                var _syncingFeeling = !options.isSyncRequest && Backbone.mobileStorage.isSyncing();
                 // if already syncing wait for that to finish before doing this update
                 if ( _syncingFeeling ) {
                     return _syncingFeeling.then( function () {
@@ -711,11 +711,11 @@
                 // sync after dirty business taken care of
                 return $.when.apply( $ , hooks ).then( function () {
                         debug.log('promise fulfilled',method,model,options);
-                        Backbone.connectid.stoppedSyncing( 'promise fulfilled' );
+                        Backbone.mobileStorage.stoppedSyncing( 'promise fulfilled' );
                         return successFn( method, model , options );
                     } ,
                     function () {
-                        Backbone.connectid.stoppedSyncing( 'promise failed' );
+                        Backbone.mobileStorage.stoppedSyncing( 'promise failed' );
                         if (errorFn) return errorFn ( method, model, options );
                     }
                 );
@@ -752,7 +752,7 @@
         }
         // if not online then reset syncing, this is a bit of a failsafe should something go wrong
         if ( !options.isOnline ) {
-            Backbone.connectid.stoppedSyncing('offline');
+            Backbone.mobileStorage.stoppedSyncing('offline');
         }
         // dual syncing only happens when online, can be passed as am option or on collection
         options.dualSync = options.isOnline &&
@@ -796,7 +796,7 @@
             // check if we have dirty records to deal with
             dirty = localsync( 'hasDirtyOrDestroyed', model, options );
             // isSyncing indicates sync in progress, if so don't add to the queue, this is probably a recursive create
-            if (  !Backbone.connectid.isSyncing()  && dirty) {
+            if (  !Backbone.mobileStorage.isSyncing()  && dirty) {
                 // is this an action on a dirty model if so we can update and call sync
                 dirtyModel = !model.id || isClientKey( model.id );
                 if ( dirtyModel) {
@@ -841,7 +841,7 @@
                     if ( returned && returned.length ) {
                         // fetch the remote data and populate cache in background
                         _success = function ( resp , status, xhr ) {
-                            Backbone.connectid.stoppedSyncing('lazy success');
+                            Backbone.mobileStorage.stoppedSyncing('lazy success');
                             debug.log ('lazy callback refresh local after fetch', resp , status, xhr);
                         };
                         _doXHRs (  hooks, function () {  return onlineSync( method, model , options ); } );
@@ -861,14 +861,14 @@
                         delete model.id;
                         model.unset( model.idAttribute );
                     // if a dirty model is updated during a sync it's original id will be missing. The workaround is to put back the id and save a dirty version
-                    } else if ( Backbone.connectid.isSyncing() && model.jerryHallId) {
+                    } else if ( Backbone.mobileStorage.isSyncing() && model.jerryHallId) {
                         dirtyModel = model.clone();
                         dirtyModel.set(model.idAttribute || 'id' , model.jerryHallId.toString() );
                         delete dirtyModel.jerryHallId;
                         return success ( localsync ('update',dirtyModel,{ dirty: true , storeName : options.storeName, ignoreCallbacks: true } ) );
                     } else if ( dirtyModel ) {
                         $.when.apply( $, hooks ).then( function () {
-                            Backbone.connectid.stoppedSyncing( 'Create Sync Resolved' );
+                            Backbone.mobileStorage.stoppedSyncing( 'Create Sync Resolved' );
                         } );
                         return success( returned );
                     } else {
@@ -916,7 +916,7 @@
                     // if it was a dirtyModel updated and we're syncing then nothing else to do so just returns
                     if ( dirtyModel ) {
                         $.when.apply( $, hooks ).then( function () {
-                            Backbone.connectid.stoppedSyncing( 'Update Sync Resolved' );
+                            Backbone.mobileStorage.stoppedSyncing( 'Update Sync Resolved' );
                         } );
                         return success( returned );
                     // this condition is where the update is being done on a record currently being created

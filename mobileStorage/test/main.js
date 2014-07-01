@@ -9,7 +9,7 @@ require({
         'jquery' : 'lib/jquery',
         'underscore' : 'lib/underscore',
         'backbone' : 'lib/backbone',
-        'dualStorage' : 'backbone.dualstorage',
+        'dualStorage' : 'backbone.mobilestorage',
         'q' : 'lib/q'
     },
     shim: {

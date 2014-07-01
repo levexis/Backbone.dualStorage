@@ -12,7 +12,7 @@ module.exports = function(config) {
         files: [
             { pattern: 'lib/**/*.js' , included: false },
             { pattern: 'test/**/*.test.js', included: false},
-            { pattern: 'backbone.dualstorage.js' , included: false },
+            { pattern: 'backbone.mobilestorage.js' , included: false },
             'test/main.js'
         ],
 
